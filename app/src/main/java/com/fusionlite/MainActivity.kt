@@ -41,10 +41,12 @@ import com.fusionlite.data.FusionRepository
 import com.fusionlite.data.SessionStore
 import com.fusionlite.data.StatisticsPeriod
 import com.fusionlite.data.StatisticsSnapshot
+import com.fusionlite.data.TariffStore
 import com.fusionlite.data.rangeLabel
 import com.fusionlite.data.shiftAnchor
 import com.fusionlite.ui.AccountScreen
 import com.fusionlite.ui.AppTab
+import com.fusionlite.ui.CostsScreen
 import com.fusionlite.ui.DashboardScreen
 import com.fusionlite.ui.FullscreenChartScreen
 import com.fusionlite.ui.FusionTheme
@@ -105,12 +107,21 @@ data class UiState(
     val stats: StatisticsSnapshot? = null,
     val statsLoading: Boolean = false,
     val statsError: String? = null,
+    // Manual tariff / costs page
+    val costsPeriod: StatisticsPeriod = StatisticsPeriod.MONTH,
+    val costsAnchor: Long = System.currentTimeMillis(),
+    val costs: StatisticsSnapshot? = null,
+    val costsLoading: Boolean = false,
+    val costsError: String? = null,
+    val buyPriceCents: String = "",
+    val sellPriceCents: String = "",
 )
 
 @Composable
 private fun FusionLiteApp() {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val store = remember { SessionStore(context) }
+    val tariffs = remember { TariffStore(context) }
     val repository = remember { FusionRepository(context) }
     val scope = rememberCoroutineScope()
 
@@ -124,6 +135,8 @@ private fun FusionLiteApp() {
                 loggedIn = initialSaved?.toSession() != null,
                 selectedDn = initialSaved?.selectedDn,
                 refreshIntervalSeconds = 30,
+                buyPriceCents = tariffs.buyCents(),
+                sellPriceCents = tariffs.sellCents(),
             )
         )
     }
@@ -382,6 +395,50 @@ private fun FusionLiteApp() {
         }
     }
 
+    /**
+     * Loads the energy window used by the Costs page. Kept separate from the
+     * Analytics snapshot because the two pages can select different periods.
+     */
+    suspend fun performCosts() {
+        val current = state
+        if (!current.loggedIn) return
+        val dn = current.selectedDn ?: return
+        var session = current.session ?: return
+        state = state.copy(costsLoading = true, costsError = null)
+        try {
+            val snapshot = try {
+                withContext(Dispatchers.IO) {
+                    repository.loadStatistics(session, dn, current.costsPeriod, current.costsAnchor)
+                }
+            } catch (e: AuthExpiredException) {
+                val renewed = renewSession(session)
+                    ?: throw AuthExpiredException("Your saved session expired. Sign in again.")
+                session = renewed
+                withContext(Dispatchers.IO) {
+                    repository.loadStatistics(renewed, dn, current.costsPeriod, current.costsAnchor)
+                }
+            }
+            state = state.copy(
+                costsLoading = false,
+                costs = snapshot,
+                costsError = snapshot.error,
+                session = session,
+            )
+        } catch (e: AuthExpiredException) {
+            state = state.copy(
+                loggedIn = false,
+                costsLoading = false,
+                session = null,
+                message = friendlyError(e),
+            )
+        } catch (e: Exception) {
+            state = state.copy(
+                costsLoading = false,
+                costsError = friendlyError(e),
+            )
+        }
+    }
+
     suspend fun performLogin(username: String, password: String, loginHost: String, loginPort: String) {
         hostRecoveryUsed = false
         state = state.copy(loading = true, message = null, error = null)
@@ -478,6 +535,24 @@ private fun FusionLiteApp() {
         }
     }
 
+    LaunchedEffect(
+        state.loggedIn,
+        state.tab,
+        state.selectedDn,
+        state.costsPeriod,
+        state.costsAnchor,
+        state.session?.accessToken,
+    ) {
+        if (state.loggedIn && state.tab == AppTab.COSTS && state.selectedDn != null) {
+            val current = state.costs
+            val stale = current == null ||
+                current.stationDn != state.selectedDn ||
+                current.period != state.costsPeriod ||
+                current.anchorMillis != state.costsAnchor
+            if (stale) performCosts()
+        }
+    }
+
     // Refresh immediately when the app returns to the foreground.
     DisposableEffect(lifecycleOwner, state.loggedIn) {
         val observer = LifecycleEventObserver { _, event ->
@@ -504,12 +579,25 @@ private fun FusionLiteApp() {
     } else if (state.loggedIn) {
         val logout: () -> Unit = {
             chartFullscreen = false
-            state = UiState(refreshIntervalSeconds = state.refreshIntervalSeconds)
+            state = UiState(
+                refreshIntervalSeconds = state.refreshIntervalSeconds,
+                // Tariffs are device preferences, not account data.
+                buyPriceCents = state.buyPriceCents,
+                sellPriceCents = state.sellPriceCents,
+                costsPeriod = state.costsPeriod,
+                costsAnchor = state.costsAnchor,
+            )
             pass = ""
             scope.launch(Dispatchers.IO) { store.clear() }
         }
         val selectStation: (String) -> Unit = { dn ->
-            state = state.copy(selectedDn = dn, stats = null, statsError = null)
+            state = state.copy(
+                selectedDn = dn,
+                stats = null,
+                statsError = null,
+                costs = null,
+                costsError = null,
+            )
             scope.launch { performRefresh() }
         }
         val refresh: () -> Unit = { scope.launch { performRefresh() } }
@@ -540,6 +628,29 @@ private fun FusionLiteApp() {
                     },
                     onRefresh = { scope.launch { performStatistics() } },
                     onExpandChart = { chartFullscreen = true },
+                )
+
+                AppTab.COSTS -> CostsScreen(
+                    state = state,
+                    onPeriod = { period ->
+                        state = state.copy(costsPeriod = period, costs = null, costsError = null)
+                    },
+                    onShift = { delta ->
+                        state = state.copy(
+                            costsAnchor = shiftAnchor(state.costsPeriod, state.costsAnchor, delta),
+                            costs = null,
+                            costsError = null,
+                        )
+                    },
+                    onRefresh = { scope.launch { performCosts() } },
+                    onBuyPrice = { value ->
+                        state = state.copy(buyPriceCents = value)
+                        tariffs.saveBuy(value)
+                    },
+                    onSellPrice = { value ->
+                        state = state.copy(sellPriceCents = value)
+                        tariffs.saveSell(value)
+                    },
                 )
 
                 AppTab.ACCOUNT -> AccountScreen(

@@ -127,8 +127,14 @@ Rotation no longer resets navigation: `MainActivity` declares
 handled configuration changes, so Compose keeps `UiState` (including the
 current tab) instead of recreating the activity.
 
+A **Costs** destination (`ui/CostsScreen.kt`) turns the historical energy series
+into money: enter a purchase price and an export sell price in cents per kWh,
+pick Day/Month/Year/Total, and the page shows consumption cost, grid-import
+cost, export revenue, self-consumption savings and the net bill. Prices are
+stored locally (`data/Tariffs.kt`, SharedPreferences) and are never uploaded.
+
 A liquid bottom navigation bar (`ui/LiquidNavBar.kt`) now floats over the shell
-with three destinations: Home, Analytics and Account. Its selected pill is a
+with four destinations: Home, Analytics, Costs and Account. Its selected pill is a
 spring-driven, bezier-wobbling blob that stretches/squashes while travelling,
 throws two satellite droplets and blends its gradient between SolarGold,
 SolarCyan and SolarGreen.

@@ -224,7 +224,7 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
 }
 
 @Composable
-private fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPeriod) -> Unit) {
+internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPeriod) -> Unit) {
     val periods = StatisticsPeriod.entries
     val shape = RoundedCornerShape(50)
     BoxWithConstraints(
@@ -282,7 +282,7 @@ private fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPeri
 }
 
 @Composable
-private fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShift: (Int) -> Unit) {
+internal fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShift: (Int) -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -339,7 +339,7 @@ private fun NavArrow(glyph: String, enabled: Boolean = true, onClick: () -> Unit
 }
 
 @Composable
-private fun StatsErrorBanner(message: String, onRetry: () -> Unit) {
+internal fun StatsErrorBanner(message: String, onRetry: () -> Unit) {
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)),

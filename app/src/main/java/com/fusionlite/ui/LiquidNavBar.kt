@@ -52,6 +52,7 @@ import kotlin.math.sin
 enum class AppTab(val label: String) {
     HOME("Home"),
     STATS("Analytics"),
+    COSTS("Costs"),
     ACCOUNT("Account"),
 }
 
@@ -149,6 +150,7 @@ private fun LiquidNavItem(
     val accent = when (tab) {
         AppTab.HOME -> SolarGold
         AppTab.STATS -> SolarCyan
+        AppTab.COSTS -> SolarAmber
         AppTab.ACCOUNT -> SolarGreen
     }
     val interaction = remember { MutableInteractionSource() }
@@ -203,16 +205,10 @@ private fun DrawScope.drawLiquidLayer(pos: Float, phase: Float, drift: Float, co
     val wobble = (sin(phase) * 0.10f + 0.04f) * halfH
     val wobble2 = (cos(phase * 1.3f) * 0.09f) * halfH
 
-    val accent = when {
-        pos < 0.5f -> SolarGold
-        pos < 1.5f -> SolarCyan
-        else -> SolarGreen
-    }
-    val nextAccent = when {
-        pos < 0.5f -> SolarCyan
-        pos < 1.5f -> SolarGreen
-        else -> SolarGold
-    }
+    val accents = listOf(SolarGold, SolarCyan, SolarAmber, SolarGreen)
+    val accentIndex = floor(pos).toInt().coerceIn(0, count - 1)
+    val accent = accents[accentIndex.coerceIn(0, accents.lastIndex)]
+    val nextAccent = accents[(accentIndex + 1).coerceAtMost(accents.lastIndex)]
     val blob = Path().apply {
         moveTo(centerX - halfW, centerY)
         cubicTo(
@@ -383,6 +379,28 @@ private fun DrawScope.drawNavGlyph(tab: AppTab, color: Color) {
                 color.copy(alpha = 0.7f),
                 Offset(w * 0.10f, h * 0.90f),
                 Offset(w * 0.90f, h * 0.90f),
+                strokeWidth = stroke.width * 0.7f,
+            )
+        }
+
+        AppTab.COSTS -> {
+            // Coin with a cent stroke.
+            drawCircle(
+                color = color,
+                radius = w * 0.31f,
+                center = Offset(w * 0.5f, h * 0.5f),
+                style = stroke,
+            )
+            drawCircle(
+                color = color.copy(alpha = 0.55f),
+                radius = w * 0.17f,
+                center = Offset(w * 0.5f, h * 0.5f),
+                style = Stroke(width = w * 0.06f),
+            )
+            drawLine(
+                color,
+                Offset(w * 0.5f, h * 0.16f),
+                Offset(w * 0.5f, h * 0.84f),
                 strokeWidth = stroke.width * 0.7f,
             )
         }
