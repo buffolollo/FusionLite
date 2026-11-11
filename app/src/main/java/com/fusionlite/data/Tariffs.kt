@@ -32,6 +32,20 @@ class TariffStore(context: Context) {
     }
 }
 
+/**
+ * Some FusionSolar hosts return an internal numeric currency id (the official
+ * app maps it through the server-provided `StationPriceUnit` list via
+ * `KpiViewUtil.handleCurrencyUnit`). Appending that id would print a
+ * meaningless digit after every amount (`12.34 4`), so only real codes/symbols
+ * are shown.
+ */
+fun usableCurrency(currency: String?): String? {
+    val value = currency?.trim().orEmpty()
+    if (value.isEmpty()) return null
+    if (value.all { it.isDigit() || it == '.' || it == '-' || it == '+' }) return null
+    return value
+}
+
 /** Accepts "12.5", "12,5" and rejects blanks/negatives. */
 fun parseCentsPerKwh(text: String): Double? =
     text.trim()
@@ -86,6 +100,6 @@ fun StatisticsSnapshot?.energyCosts(
         exportRevenue = exportRevenue,
         selfUseSavings = selfUse * buyCentsPerKwh / 100.0,
         netBill = importCost - exportRevenue,
-        currency = this?.kpi?.currency,
+        currency = usableCurrency(this?.kpi?.currency),
     )
 }

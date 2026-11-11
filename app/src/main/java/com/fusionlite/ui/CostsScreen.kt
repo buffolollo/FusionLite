@@ -63,7 +63,8 @@ fun CostsScreen(
     val buy = parseCentsPerKwh(state.buyPriceCents)
     val sell = parseCentsPerKwh(state.sellPriceCents)
     val costs = state.costs.energyCosts(buy ?: 0.0, sell ?: 0.0)
-    val currency = state.costs?.kpi?.currency?.takeIf { it.isNotBlank() } ?: costs.currency
+    // Numeric ids are filtered by energyCosts (see usableCurrency).
+    val currency = costs.currency
     val hasData = state.costs != null
 
     LazyColumn(
