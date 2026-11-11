@@ -73,6 +73,7 @@ fun SolarPanelScene(
 ) {
     val energy = powerFraction.coerceIn(0f, 1f)
     val fraction = max(energy, 0.02f)
+    val dark = LocalFusionPalette.current.dark
 
     // Real-time production drives the scene tempo: ~0.35x at night/zero output
     // up to 2x at full capacity. The phases are integrated with
@@ -106,15 +107,20 @@ fun SolarPanelScene(
     Canvas(modifier) {
         drawRect(
             Brush.verticalGradient(
-                listOf(Color(0xFF0A1730), Color(0xFF0C2243), Color(0xFF07101F))
+                if (dark) {
+                    listOf(Color(0xFF0A1730), Color(0xFF0C2243), Color(0xFF07101F))
+                } else {
+                    // Daylight sky for the white theme.
+                    listOf(Color(0xFF8FC4F2), Color(0xFFBFDFFA), Color(0xFFEAF4FF))
+                }
             )
         )
-        drawStars(pulse)
+        if (dark) drawStars(pulse)
         drawSun(Offset(size.width * 0.80f, size.height * 0.24f), size.minDimension * 0.075f, pulse, fraction)
         drawPanels(Offset(size.width * 0.04f, size.height * 0.40f), size.width * 0.52f, size.height * 0.52f, fraction, sweep)
         if (showHouse) {
             val houseCenter = Offset(size.width * 0.76f, size.height * 0.72f)
-            drawHouse(houseCenter, size.minDimension * 0.11f, fraction)
+            drawHouse(houseCenter, size.minDimension * 0.11f, fraction, dark)
             drawPowerFlow(
                 from = Offset(size.width * 0.46f, size.height * 0.50f),
                 to = Offset(houseCenter.x - size.minDimension * 0.09f, houseCenter.y - size.minDimension * 0.02f),
@@ -298,17 +304,17 @@ private fun DrawScope.drawPanels(origin: Offset, width: Float, height: Float, fr
     )
 }
 
-private fun DrawScope.drawHouse(center: Offset, r: Float, fraction: Float) {
+private fun DrawScope.drawHouse(center: Offset, r: Float, fraction: Float, dark: Boolean) {
     val bodyTop = center.y - r * 0.10f
     val bodyBottom = center.y + r * 0.85f
     drawRoundRect(
-        color = Color(0xFF132743),
+        color = if (dark) Color(0xFF132743) else Color(0xFFF7FBFF),
         topLeft = Offset(center.x - r * 0.72f, bodyTop),
         size = Size(r * 1.44f, bodyBottom - bodyTop),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
     )
     drawRoundRect(
-        color = SolarCyan.copy(alpha = 0.42f),
+        color = SolarCyan.copy(alpha = if (dark) 0.42f else 0.75f),
         topLeft = Offset(center.x - r * 0.72f, bodyTop),
         size = Size(r * 1.44f, bodyBottom - bodyTop),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
@@ -320,7 +326,7 @@ private fun DrawScope.drawHouse(center: Offset, r: Float, fraction: Float) {
         lineTo(center.x + r * 0.94f, bodyTop)
         close()
     }
-    drawPath(roof, color = Color(0xFF1B3558))
+    drawPath(roof, color = if (dark) Color(0xFF1B3558) else Color(0xFFE3EEFB))
     drawPath(roof, color = SolarGold.copy(alpha = 0.55f), style = Stroke(width = 1.8f))
     // Windows
     val windowGlow = 0.35f + 0.55f * fraction
@@ -619,7 +625,7 @@ private fun FlowNodeChip(
     Column(
         modifier = modifier
             .widthIn(min = 86.dp)
-            .background(NightSurfaceHigh.copy(alpha = 0.94f), RoundedCornerShape(16.dp))
+            .background(LocalFusionPalette.current.surfaceHigh.copy(alpha = 0.94f), RoundedCornerShape(16.dp))
             .border(1.dp, accent.copy(alpha = 0.40f), RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

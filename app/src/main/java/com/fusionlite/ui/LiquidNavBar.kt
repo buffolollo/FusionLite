@@ -72,6 +72,7 @@ fun LiquidBottomBar(
 ) {
     val items = AppTab.entries
     val target = items.indexOf(selected).toFloat()
+    val palette = LocalFusionPalette.current
     val position = remember { Animatable(target) }
     val transition = rememberInfiniteTransition(label = "liquid-nav")
     val phase by transition.animateFloat(
@@ -106,8 +107,8 @@ fun LiquidBottomBar(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        NightSurfaceHigh.copy(alpha = 0.97f),
-                        NightSurface.copy(alpha = 0.99f),
+                        palette.navTop.copy(alpha = 0.97f),
+                        palette.navBottom.copy(alpha = 0.99f),
                     )
                 )
             )
@@ -124,7 +125,7 @@ fun LiquidBottomBar(
             ),
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            drawLiquidLayer(position.value, phase, drift, items.size)
+            drawLiquidLayer(position.value, phase, drift, items.size, palette)
         }
 
         Row(Modifier.fillMaxSize()) {
@@ -148,14 +149,15 @@ private fun LiquidNavItem(
     modifier: Modifier = Modifier,
 ) {
     val accent = when (tab) {
-        AppTab.HOME -> SolarGold
-        AppTab.STATS -> SolarCyan
-        AppTab.COSTS -> SolarAmber
-        AppTab.ACCOUNT -> SolarGreen
+        AppTab.HOME -> LocalFusionPalette.current.gold
+        AppTab.STATS -> LocalFusionPalette.current.cyan
+        AppTab.COSTS -> LocalFusionPalette.current.amber
+        AppTab.ACCOUNT -> LocalFusionPalette.current.green
     }
     val interaction = remember { MutableInteractionSource() }
+    val palette = LocalFusionPalette.current
     val tint by androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) accent else Color.White.copy(alpha = 0.42f),
+        targetValue = if (selected) accent else palette.navInactive,
         animationSpec = tween(320),
         label = "nav-tint",
     )
@@ -186,7 +188,13 @@ private fun LiquidNavItem(
 /**
  * Draws the travelling blob. All geometry is in pixels of the bar canvas.
  */
-private fun DrawScope.drawLiquidLayer(pos: Float, phase: Float, drift: Float, count: Int) {
+private fun DrawScope.drawLiquidLayer(
+    pos: Float,
+    phase: Float,
+    drift: Float,
+    count: Int,
+    palette: FusionPalette,
+) {
     val itemWidth = size.width / count
     val centerX = itemWidth * (pos + 0.5f)
     val centerY = size.height / 2f
@@ -205,7 +213,7 @@ private fun DrawScope.drawLiquidLayer(pos: Float, phase: Float, drift: Float, co
     val wobble = (sin(phase) * 0.10f + 0.04f) * halfH
     val wobble2 = (cos(phase * 1.3f) * 0.09f) * halfH
 
-    val accents = listOf(SolarGold, SolarCyan, SolarAmber, SolarGreen)
+    val accents = listOf(palette.gold, palette.cyan, palette.amber, palette.green)
     val accentIndex = floor(pos).toInt().coerceIn(0, count - 1)
     val accent = accents[accentIndex.coerceIn(0, accents.lastIndex)]
     val nextAccent = accents[(accentIndex + 1).coerceAtMost(accents.lastIndex)]
@@ -259,7 +267,7 @@ private fun DrawScope.drawLiquidLayer(pos: Float, phase: Float, drift: Float, co
         brush = Brush.linearGradient(
             listOf(
                 accent.copy(alpha = 0.70f),
-                Color.White.copy(alpha = 0.10f),
+                palette.blobSpecular.copy(alpha = if (palette.dark) 0.10f else 0.35f),
                 accent.copy(alpha = 0.35f),
             ),
             start = Offset(centerX - halfW, centerY - halfH),
@@ -270,7 +278,7 @@ private fun DrawScope.drawLiquidLayer(pos: Float, phase: Float, drift: Float, co
     // Specular highlight.
     rotate(degrees = -18f, pivot = Offset(centerX, centerY)) {
         drawArc(
-            color = Color.White.copy(alpha = 0.22f),
+            color = palette.blobSpecular,
             startAngle = 200f,
             sweepAngle = 120f,
             useCenter = false,

@@ -139,6 +139,24 @@ spring-driven, bezier-wobbling blob that stretches/squashes while travelling,
 throws two satellite droplets and blends its gradient between SolarGold,
 SolarCyan and SolarGreen.
 
+### Theme (white / dark / follow system)
+
+`ui/Theme.kt` ships two colour schemes plus an extended `FusionPalette`
+(glass fills, chart grid/label colours, the nav-bar gradient, hero scrim and
+light-mode accent variants). The default is **follow system**; the animated
+day/night switch (`ui/ThemeToggle.kt`) appears on the login screen and in
+**Account → Appearance**, and pins an explicit light or dark theme. The choice
+is stored in SharedPreferences (`data/ThemePreference.kt`, `ThemeMode`), so it
+survives sign-out and restarts, and can be reset to "follow the phone" from the
+Account card.
+
+Switching themes animates the *entire* UI: one shared `t` value blends every
+Material colour slot and the palette in lockstep, so surfaces, text, canvases,
+nav bar and the solar artwork all crossfade. Tab changes use `AnimatedContent`
+(fade + slight horizontal travel) and login ↔ dashboard ↔ fullscreen chart are
+crossfaded as well. The activity also flips the system-bar icon appearance so
+edge-to-edge bars stay legible in both themes.
+
 The **Analytics** tab (`ui/StatisticsScreen.kt`, `ui/StatisticsCharts.kt`) is a
 custom statistics dashboard:
 

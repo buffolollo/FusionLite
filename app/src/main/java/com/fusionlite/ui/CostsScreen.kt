@@ -66,6 +66,7 @@ fun CostsScreen(
     // Numeric ids are filtered by energyCosts (see usableCurrency).
     val currency = costs.currency
     val hasData = state.costs != null
+    val palette = LocalFusionPalette.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -99,7 +100,7 @@ fun CostsScreen(
                 title = "Purchase price",
                 subtitle = "What you pay for 1 kWh taken from the grid.",
                 value = state.buyPriceCents,
-                accent = SolarGold,
+                accent = palette.gold,
                 onValue = onBuyPrice,
             )
         }
@@ -109,7 +110,7 @@ fun CostsScreen(
                 title = "Export sell price",
                 subtitle = "What the grid pays you for 1 kWh exported.",
                 value = state.sellPriceCents,
-                accent = SolarGreen,
+                accent = palette.green,
                 onValue = onSellPrice,
             )
         }
@@ -135,7 +136,7 @@ fun CostsScreen(
                     } else {
                         "Enter a sell price"
                     },
-                    accent = SolarGreen,
+                    accent = palette.green,
                     currency = currency,
                     modifier = Modifier.weight(1f),
                 )
@@ -147,7 +148,7 @@ fun CostsScreen(
                     } else {
                         "Enter a purchase price"
                     },
-                    accent = SolarCyan,
+                    accent = palette.cyan,
                     currency = currency,
                     modifier = Modifier.weight(1f),
                 )
@@ -170,6 +171,7 @@ fun CostsScreen(
 
 @Composable
 private fun CostsHeader(stationName: String, loading: Boolean, onRefresh: () -> Unit) {
+    val palette = LocalFusionPalette.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -181,7 +183,7 @@ private fun CostsHeader(stationName: String, loading: Boolean, onRefresh: () -> 
                 fontSize = 9.sp,
                 letterSpacing = 2.2.sp,
                 fontWeight = FontWeight.Bold,
-                color = SolarAmber,
+                color = palette.amber,
             )
             Text(
                 stationName,
@@ -195,8 +197,8 @@ private fun CostsHeader(stationName: String, loading: Boolean, onRefresh: () -> 
         Box(
             Modifier
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.05f))
-                .border(1.dp, SolarAmber.copy(alpha = 0.25f), CircleShape)
+                .background(palette.glass)
+                .border(1.dp, palette.amber.copy(alpha = 0.25f), CircleShape)
                 .clickable(enabled = !loading, onClick = onRefresh)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
@@ -205,7 +207,7 @@ private fun CostsHeader(stationName: String, loading: Boolean, onRefresh: () -> 
                 fontSize = 9.sp,
                 letterSpacing = 1.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (loading) SolarAmber.copy(alpha = 0.5f) else SolarAmber,
+                color = if (loading) palette.amber.copy(alpha = 0.5f) else palette.amber,
             )
         }
     }
@@ -269,6 +271,7 @@ private fun ConsumptionCostCard(
     hasData: Boolean,
     currency: String?,
 ) {
+    val palette = LocalFusionPalette.current
     Box(
         Modifier
             .fillMaxWidth()
@@ -277,7 +280,7 @@ private fun ConsumptionCostCard(
                 Brush.linearGradient(
                     listOf(
                         SolarAmber.copy(alpha = 0.20f),
-                        NightSurfaceHigh.copy(alpha = 0.85f),
+                        palette.surfaceHigh.copy(alpha = 0.85f),
                     )
                 )
             ),
@@ -288,7 +291,7 @@ private fun ConsumptionCostCard(
                 fontSize = 9.sp,
                 letterSpacing = 1.8.sp,
                 fontWeight = FontWeight.Bold,
-                color = SolarAmber,
+                color = palette.amber,
             )
             Spacer(Modifier.height(6.dp))
             Text(
@@ -324,6 +327,7 @@ private fun MoneyStat(
     currency: String?,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalFusionPalette.current
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -343,7 +347,7 @@ private fun MoneyStat(
                 value?.let { money(it, currency) } ?: "—",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (value != null && value < 0) SolarGreen
+                color = if (value != null && value < 0) palette.green
                 else MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -361,6 +365,7 @@ private fun MoneyStat(
 
 @Composable
 private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Boolean) {
+    val palette = LocalFusionPalette.current
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -387,7 +392,7 @@ private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Bo
                 energy = costs.consumptionKwh,
                 amount = costs.consumptionCost,
                 currency = currency,
-                accent = SolarGold,
+                accent = palette.gold,
                 note = "household load",
             )
             CostRow(
@@ -395,7 +400,7 @@ private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Bo
                 energy = costs.importKwh,
                 amount = costs.importCost,
                 currency = currency,
-                accent = SolarCyan,
+                accent = palette.cyan,
                 note = "purchased",
             )
             CostRow(
@@ -403,7 +408,7 @@ private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Bo
                 energy = costs.selfUseKwh,
                 amount = costs.selfUseSavings,
                 currency = currency,
-                accent = SolarGreen,
+                accent = palette.green,
                 note = "avoided purchase",
             )
             CostRow(
@@ -411,7 +416,7 @@ private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Bo
                 energy = costs.exportKwh,
                 amount = -costs.exportRevenue,
                 currency = currency,
-                accent = SolarGreen,
+                accent = palette.green,
                 note = "credited",
             )
             Box(
@@ -437,7 +442,7 @@ private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Bo
                     money(costs.netBill, currency),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (costs.netBill < 0) SolarGreen else SolarGold,
+                    color = if (costs.netBill < 0) palette.green else palette.gold,
                 )
             }
         }

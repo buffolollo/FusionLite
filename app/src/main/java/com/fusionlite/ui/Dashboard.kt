@@ -80,6 +80,7 @@ fun DashboardScreen(
     val station = state.stations.firstOrNull { it.dn == state.selectedDn } ?: state.stations.firstOrNull()
     val metrics = StationMetrics.from(station)
     val flow = state.flowMetrics
+    val palette = LocalFusionPalette.current
     val secondsAgo = if (state.lastUpdated == 0L) null
     else ((now - state.lastUpdated) / 1000L).coerceAtLeast(0)
 
@@ -108,8 +109,8 @@ fun DashboardScreen(
                                 )
                             },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = SolarGold.copy(alpha = 0.18f),
-                                selectedLabelColor = SolarGold,
+                                selectedContainerColor = palette.gold.copy(alpha = 0.18f),
+                                selectedLabelColor = palette.gold,
                             ),
                         )
                     }
@@ -125,11 +126,11 @@ fun DashboardScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 KpiTile(
                     icon = "☀", label = "Today", value = metrics.dailyEnergy, unit = "kWh",
-                    accent = SolarGold, modifier = Modifier.weight(1f),
+                    accent = palette.gold, modifier = Modifier.weight(1f),
                 )
                 KpiTile(
                     icon = "⚡", label = "Total", value = metrics.cumulativeEnergy, unit = "kWh",
-                    accent = SolarCyan, modifier = Modifier.weight(1f),
+                    accent = palette.cyan, modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -137,11 +138,11 @@ fun DashboardScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 KpiTile(
                     icon = "🔋", label = "Battery", value = metrics.batterySoc ?: flow?.soc, unit = "%",
-                    accent = SolarGreen, modifier = Modifier.weight(1f),
+                    accent = palette.green, modifier = Modifier.weight(1f),
                 )
                 KpiTile(
                     icon = "🏗", label = "Capacity", value = metrics.capacity, unit = "kWp",
-                    accent = SolarBlue, modifier = Modifier.weight(1f),
+                    accent = palette.blue, modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -176,6 +177,7 @@ private fun HeroCard(
     onRefresh: () -> Unit,
 ) {
     val shape = RoundedCornerShape(28.dp)
+    val palette = LocalFusionPalette.current
     Box(
         Modifier
             .fillMaxWidth()
@@ -189,7 +191,11 @@ private fun HeroCard(
                 .matchParentSize()
                 .background(
                     Brush.horizontalGradient(
-                        listOf(NightSky.copy(alpha = 0.94f), NightSky.copy(alpha = 0.55f), Color.Transparent)
+                        listOf(
+                            palette.heroScrim.copy(alpha = 0.94f),
+                            palette.heroScrim.copy(alpha = 0.55f),
+                            Color.Transparent,
+                        )
                     )
                 )
         )
@@ -357,6 +363,7 @@ private fun KpiTile(
 @Composable
 private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boolean) {
     val allocation = remember(metrics) { metrics?.allocation() }
+    val palette = LocalFusionPalette.current
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -378,7 +385,7 @@ private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boole
                     )
                 }
                 if (loading) {
-                    Text("refreshing…", fontSize = 10.sp, color = SolarCyan)
+                    Text("refreshing…", fontSize = 10.sp, color = palette.cyan)
                 }
             }
             Spacer(Modifier.height(10.dp))
@@ -417,11 +424,12 @@ private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boole
 
 @Composable
 private fun GridSummary(allocation: FlowAllocation?) {
+    val palette = LocalFusionPalette.current
     val direction = allocation?.gridDirection ?: GridDirection.IDLE
     val color = when (direction) {
-        GridDirection.IMPORT -> SolarAmber
-        GridDirection.EXPORT -> SolarGreen
-        GridDirection.IDLE -> SolarBlue
+        GridDirection.IMPORT -> palette.amber
+        GridDirection.EXPORT -> palette.green
+        GridDirection.IDLE -> palette.blue
     }
     val title = when (direction) {
         GridDirection.IMPORT -> "Drawing from the grid"
@@ -479,6 +487,7 @@ private fun GridSummary(allocation: FlowAllocation?) {
 
 @Composable
 private fun SelfUseBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
+    val palette = LocalFusionPalette.current
     val pv = metrics.pv ?: 0.0
     if (pv <= 0.02 || allocation == null) return
     val ratio = (allocation.selfConsumption / pv).coerceIn(0.0, 1.0)
@@ -506,7 +515,7 @@ private fun SelfUseBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
                 "${(ratio * 100).toInt()}%",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = SolarGold,
+                color = palette.gold,
             )
         }
         Spacer(Modifier.height(5.dp))
@@ -522,7 +531,7 @@ private fun SelfUseBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
                     .fillMaxWidth(animated)
                     .height(8.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Brush.horizontalGradient(listOf(SolarGold, SolarGreen))),
+                    .background(Brush.horizontalGradient(listOf(palette.gold, palette.green))),
             )
         }
         Spacer(Modifier.height(5.dp))
@@ -536,13 +545,14 @@ private fun SelfUseBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
 
 @Composable
 private fun BatteryCard(soc: Double?, batteryPower: Double?) {
+    val palette = LocalFusionPalette.current
     val target = ((soc ?: 0.0) / 100.0).coerceIn(0.0, 1.0).toFloat()
     val animated by animateFloatAsState(target, tween(900), label = "soc")
     val color = when {
         soc == null -> MaterialTheme.colorScheme.onSurfaceVariant
         soc < 20 -> Color(0xFFFF7A7A)
-        soc < 60 -> SolarGold
-        else -> SolarGreen
+        soc < 60 -> palette.gold
+        else -> palette.green
     }
     Card(
         shape = RoundedCornerShape(24.dp),
@@ -613,6 +623,7 @@ private fun AutoRefreshRow(
     diag: String?,
     onLogout: () -> Unit,
 ) {
+    val palette = LocalFusionPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -633,12 +644,12 @@ private fun AutoRefreshRow(
                         Modifier
                             .clip(RoundedCornerShape(50))
                             .background(
-                                if (selected) SolarCyan.copy(alpha = 0.18f)
+                                if (selected) palette.cyan.copy(alpha = 0.18f)
                                 else MaterialTheme.colorScheme.surfaceVariant
                             )
                             .border(
                                 1.dp,
-                                if (selected) SolarCyan.copy(alpha = 0.6f) else Color.Transparent,
+                                if (selected) palette.cyan.copy(alpha = 0.6f) else Color.Transparent,
                                 RoundedCornerShape(50),
                             )
                             .clickable { onIntervalChange(seconds) }
@@ -648,7 +659,7 @@ private fun AutoRefreshRow(
                             "${seconds}s",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (selected) SolarCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (selected) palette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

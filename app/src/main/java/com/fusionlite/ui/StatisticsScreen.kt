@@ -81,6 +81,7 @@ fun StatisticsScreen(
 ) {
     val snapshot = state.stats
     val station = state.stations.firstOrNull { it.dn == state.selectedDn } ?: state.stations.firstOrNull()
+    val palette = LocalFusionPalette.current
 
     val production = remember(snapshot) { snapshot?.production().orEmpty() }
     val consumption = remember(snapshot) { snapshot?.consumption().orEmpty() }
@@ -122,21 +123,21 @@ fun StatisticsScreen(
                     label = "To grid",
                     value = snapshot?.periodExport,
                     unit = "kWh",
-                    accent = SolarGreen,
+                    accent = palette.green,
                     modifier = Modifier.weight(1f),
                 )
                 MiniStat(
                     label = "Consumed",
                     value = snapshot?.periodConsumption,
                     unit = "kWh",
-                    accent = SolarCyan,
+                    accent = palette.cyan,
                     modifier = Modifier.weight(1f),
                 )
                 MiniStat(
                     label = "Self-use",
                     value = snapshot?.periodSelfUse,
                     unit = "kWh",
-                    accent = SolarGold,
+                    accent = palette.gold,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -182,6 +183,7 @@ fun StatisticsScreen(
 
 @Composable
 private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: () -> Unit) {
+    val palette = LocalFusionPalette.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -193,7 +195,7 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
                 fontSize = 9.sp,
                 letterSpacing = 2.2.sp,
                 fontWeight = FontWeight.Bold,
-                color = SolarCyan,
+                color = palette.cyan,
             )
             Text(
                 stationName,
@@ -207,8 +209,8 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
         Box(
             Modifier
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.05f))
-                .border(1.dp, SolarCyan.copy(alpha = 0.25f), CircleShape)
+                .background(palette.glass)
+                .border(1.dp, palette.cyan.copy(alpha = 0.25f), CircleShape)
                 .clickable(enabled = !loading, onClick = onRefresh)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
@@ -217,7 +219,7 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
                 fontSize = 9.sp,
                 letterSpacing = 1.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (loading) SolarCyan.copy(alpha = 0.5f) else SolarCyan,
+                color = if (loading) palette.cyan.copy(alpha = 0.5f) else palette.cyan,
             )
         }
     }
@@ -227,11 +229,12 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
 internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPeriod) -> Unit) {
     val periods = StatisticsPeriod.entries
     val shape = RoundedCornerShape(50)
+    val palette = LocalFusionPalette.current
     BoxWithConstraints(
         Modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(palette.glass)
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), shape)
             .padding(4.dp),
     ) {
@@ -273,7 +276,8 @@ internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPer
                         period.chip,
                         fontSize = 12.sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                        color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (active) MaterialTheme.colorScheme.onSurface
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
@@ -283,6 +287,7 @@ internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPer
 
 @Composable
 internal fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShift: (Int) -> Unit) {
+    val palette = LocalFusionPalette.current
     Row(
         Modifier
             .fillMaxWidth()
@@ -308,7 +313,7 @@ internal fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShi
                 fontSize = 10.sp,
                 letterSpacing = 1.4.sp,
                 fontWeight = FontWeight.Bold,
-                color = SolarGold,
+                color = palette.gold,
             )
         }
     }
@@ -316,11 +321,12 @@ internal fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShi
 
 @Composable
 private fun NavArrow(glyph: String, enabled: Boolean = true, onClick: () -> Unit) {
+    val palette = LocalFusionPalette.current
     Box(
         Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = if (enabled) 0.06f else 0.02f))
+            .background(if (enabled) palette.glassStrong else palette.glass)
             .border(
                 1.dp,
                 if (enabled) SolarCyan.copy(alpha = 0.30f) else Color.Transparent,
@@ -333,7 +339,8 @@ private fun NavArrow(glyph: String, enabled: Boolean = true, onClick: () -> Unit
             glyph,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = if (enabled) Color.White else Color.White.copy(alpha = 0.20f),
+            color = if (enabled) MaterialTheme.colorScheme.onSurface
+            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
         )
     }
 }
@@ -364,6 +371,7 @@ internal fun StatsErrorBanner(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun HeroProduction(snapshot: StatisticsSnapshot?, period: StatisticsPeriod, loading: Boolean) {
+    val palette = LocalFusionPalette.current
     val value = snapshot?.headlineProduction
     val subtitle = when (period) {
         StatisticsPeriod.DAY -> "Energy generated today"
@@ -379,7 +387,7 @@ private fun HeroProduction(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                 Brush.linearGradient(
                     listOf(
                         SolarCyan.copy(alpha = 0.16f),
-                        NightSurfaceHigh.copy(alpha = 0.75f),
+                        palette.surfaceHigh.copy(alpha = 0.75f),
                         SolarGold.copy(alpha = 0.10f),
                     )
                 )
@@ -393,21 +401,21 @@ private fun HeroProduction(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                 fontSize = 9.sp,
                 letterSpacing = 1.6.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = SolarCyan,
+                color = palette.cyan,
             )
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
                     value?.clean(1) ?: if (loading) "…" else "—",
                     fontSize = 46.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     letterSpacing = (-1.5).sp,
                 )
                 Text(
                     " kWh",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
-                    color = SolarGold,
+                    color = palette.gold,
                     modifier = Modifier.padding(bottom = 9.dp),
                 )
             }
@@ -416,20 +424,20 @@ private fun HeroProduction(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                 Text(
                     if (peak != null) "Peak ${peak.value.clean(1)} kWh · ${peak.label}" else "No buckets yet",
                     fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.62f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 snapshot?.balance?.totalProductPower?.let {
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "·",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.35f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         "server total ${parseNum(it)?.clean(1) ?: "—"}",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.42f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
                 }
             }
@@ -492,6 +500,7 @@ private fun ChartCard(
     // Evidence: PhotovoltaicStatisticsViewModel.getLeftUnit — the day series is
     // instantaneous power (kW); month/year buckets are energy (kWh).
     val chartUnit = if (period == StatisticsPeriod.DAY) "kW" else "kWh"
+    val palette = LocalFusionPalette.current
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -529,7 +538,7 @@ private fun ChartCard(
             when (mode) {
                 ChartMode.CURVE -> ProductionAreaChart(
                     points = production,
-                    accent = SolarGold,
+                    accent = palette.gold,
                     unit = chartUnit,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -541,8 +550,8 @@ private fun ChartCard(
                     GroupedEnergyBars(
                         primary = production,
                         secondary = consumption,
-                        primaryColor = SolarGold,
-                        secondaryColor = SolarCyan,
+                        primaryColor = palette.gold,
+                        secondaryColor = palette.cyan,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(210.dp),
@@ -551,8 +560,8 @@ private fun ChartCard(
                     Spacer(Modifier.height(8.dp))
                     LegendRow(
                         listOf(
-                            "Production" to SolarGold,
-                            "Consumption" to SolarCyan,
+                            "Production" to palette.gold,
+                            "Consumption" to palette.cyan,
                         )
                     )
                 }
@@ -584,21 +593,22 @@ private fun ChartCard(
 
 @Composable
 private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
+    val palette = LocalFusionPalette.current
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(palette.glass)
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         ChartMode.entries.forEach { item ->
             val active = item == mode
             val background by animateColorAsState(
-                if (active) SolarCyan.copy(alpha = 0.20f) else Color.Transparent,
+                if (active) palette.cyan.copy(alpha = 0.20f) else Color.Transparent,
                 label = "mode-bg",
             )
             val textColor by animateColorAsState(
-                if (active) SolarCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                if (active) palette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
                 label = "mode-fg",
             )
             Box(
@@ -617,12 +627,13 @@ private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
 /** Four corner brackets: opens the chart in full-screen landscape. */
 @Composable
 private fun ExpandButton(onClick: () -> Unit) {
+    val palette = LocalFusionPalette.current
     Box(
         Modifier
             .size(30.dp)
             .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.05f))
-            .border(1.dp, SolarCyan.copy(alpha = 0.25f), CircleShape)
+            .background(palette.glass)
+            .border(1.dp, palette.cyan.copy(alpha = 0.25f), CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -631,14 +642,14 @@ private fun ExpandButton(onClick: () -> Unit) {
             val len = size.minDimension * 0.38f
             val w = size.width
             val h = size.height
-            drawLine(SolarCyan, Offset(0f, len), Offset(0f, 0f), stroke)
-            drawLine(SolarCyan, Offset(0f, 0f), Offset(len, 0f), stroke)
-            drawLine(SolarCyan, Offset(w - len, 0f), Offset(w, 0f), stroke)
-            drawLine(SolarCyan, Offset(w, 0f), Offset(w, len), stroke)
-            drawLine(SolarCyan, Offset(0f, h - len), Offset(0f, h), stroke)
-            drawLine(SolarCyan, Offset(0f, h), Offset(len, h), stroke)
-            drawLine(SolarCyan, Offset(w - len, h), Offset(w, h), stroke)
-            drawLine(SolarCyan, Offset(w, h), Offset(w, h - len), stroke)
+            drawLine(palette.cyan, Offset(0f, len), Offset(0f, 0f), stroke)
+            drawLine(palette.cyan, Offset(0f, 0f), Offset(len, 0f), stroke)
+            drawLine(palette.cyan, Offset(w - len, 0f), Offset(w, 0f), stroke)
+            drawLine(palette.cyan, Offset(w, 0f), Offset(w, len), stroke)
+            drawLine(palette.cyan, Offset(0f, h - len), Offset(0f, h), stroke)
+            drawLine(palette.cyan, Offset(0f, h), Offset(len, h), stroke)
+            drawLine(palette.cyan, Offset(w - len, h), Offset(w, h), stroke)
+            drawLine(palette.cyan, Offset(w, h), Offset(w, h - len), stroke)
         }
     }
 }
@@ -665,13 +676,15 @@ private fun LegendDot(label: String, color: Color) {
     }
 }
 
+@Composable
 private fun donutSegments(snapshot: StatisticsSnapshot?): List<DonutSegment> {
     if (snapshot == null) return emptyList()
+    val palette = LocalFusionPalette.current
     return listOf(
-        DonutSegment("Self-consumed", snapshot.periodSelfUse, SolarGold),
-        DonutSegment("Exported", snapshot.periodExport, SolarGreen),
-        DonutSegment("Charged", snapshot.charge, SolarCyan),
-        DonutSegment("Imported", snapshot.periodImport, SolarBlue),
+        DonutSegment("Self-consumed", snapshot.periodSelfUse, palette.gold),
+        DonutSegment("Exported", snapshot.periodExport, palette.green),
+        DonutSegment("Charged", snapshot.charge, palette.cyan),
+        DonutSegment("Imported", snapshot.periodImport, palette.blue),
     ).filter { it.value > 0.0 }
 }
 
@@ -703,7 +716,7 @@ private fun MixCard(snapshot: StatisticsSnapshot?, production: List<SeriesPoint>
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     RatioGauge(
                         ratio = (snapshot?.selfSufficiency ?: 0.0).toFloat(),
-                        color = SolarGreen,
+                        color = LocalFusionPalette.current.green,
                         caption = "self-sufficiency",
                         modifier = Modifier.size(66.dp),
                     )
@@ -731,11 +744,12 @@ private fun BreakdownCard(
     gridExport: List<SeriesPoint>,
     gridImport: List<SeriesPoint>,
 ) {
+    val palette = LocalFusionPalette.current
     val rows = listOf(
-        Triple("PV production", snapshot?.periodProduction ?: 0.0, SolarGold),
-        Triple("Consumption", snapshot?.periodConsumption ?: 0.0, SolarCyan),
-        Triple("Exported to grid", snapshot?.periodExport ?: 0.0, SolarGreen),
-        Triple("Imported from grid", snapshot?.periodImport ?: 0.0, SolarBlue),
+        Triple("PV production", snapshot?.periodProduction ?: 0.0, palette.gold),
+        Triple("Consumption", snapshot?.periodConsumption ?: 0.0, palette.cyan),
+        Triple("Exported to grid", snapshot?.periodExport ?: 0.0, palette.green),
+        Triple("Imported from grid", snapshot?.periodImport ?: 0.0, palette.blue),
         Triple("Battery charged", snapshot?.charge ?: 0.0, Color(0xFFB388FF)),
         Triple("Battery discharged", snapshot?.discharge ?: 0.0, Color(0xFFFF8A65)),
     )
@@ -792,6 +806,7 @@ private fun BucketChip(label: String, count: Int) {
 
 @Composable
 private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeriod) {
+    val palette = LocalFusionPalette.current
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -809,14 +824,14 @@ private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                     caption = snapshot?.peak?.let {
                         if (period == StatisticsPeriod.DAY) "${it.label} · kW" else it.label
                     } ?: "no data",
-                    accent = SolarGold,
+                    accent = palette.gold,
                     modifier = Modifier.weight(1f),
                 )
                 HighlightTile(
                     label = "AVERAGE",
                     value = snapshot?.average?.clean(1) ?: "—",
                     caption = "per active bucket",
-                    accent = SolarCyan,
+                    accent = palette.cyan,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -833,7 +848,7 @@ private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                     label = "SELF-SUFFICIENCY",
                     value = "${((snapshot?.selfSufficiency ?: 0.0) * 100).toInt()}%",
                     caption = "of consumption covered",
-                    accent = SolarGreen,
+                    accent = palette.green,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -844,7 +859,7 @@ private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color.White.copy(alpha = 0.03f))
+                        .background(palette.glass)
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
@@ -898,7 +913,7 @@ private fun HighlightTile(
             color = accent,
         )
         Spacer(Modifier.height(3.dp))
-        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         Text(
             caption,
             fontSize = 8.5.sp,
@@ -955,6 +970,7 @@ fun FullscreenChartScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalFusionPalette.current
     val production = remember(snapshot) { snapshot?.production().orEmpty() }
     val chartUnit = if (period == StatisticsPeriod.DAY) "kW" else "kWh"
 
@@ -975,7 +991,7 @@ fun FullscreenChartScreen(
                     fontSize = 9.sp,
                     letterSpacing = 2.2.sp,
                     fontWeight = FontWeight.Bold,
-                    color = SolarCyan,
+                    color = palette.cyan,
                 )
                 Text(
                     "$stationName · $range",
@@ -994,8 +1010,8 @@ fun FullscreenChartScreen(
             Box(
                 Modifier
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.05f))
-                    .border(1.dp, SolarCyan.copy(alpha = 0.30f), CircleShape)
+                    .background(palette.glass)
+                    .border(1.dp, palette.cyan.copy(alpha = 0.30f), CircleShape)
                     .clickable(onClick = onClose)
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             ) {
@@ -1004,7 +1020,7 @@ fun FullscreenChartScreen(
                     fontSize = 9.sp,
                     letterSpacing = 1.sp,
                     fontWeight = FontWeight.Bold,
-                    color = SolarCyan,
+                    color = palette.cyan,
                 )
             }
         }
@@ -1012,7 +1028,7 @@ fun FullscreenChartScreen(
         Spacer(Modifier.height(10.dp))
         ProductionAreaChart(
             points = production,
-            accent = SolarGold,
+            accent = palette.gold,
             unit = chartUnit,
             modifier = Modifier
                 .fillMaxWidth()

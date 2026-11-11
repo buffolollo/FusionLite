@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fusionlite.UiState
 import com.fusionlite.data.StationMetrics
+import com.fusionlite.data.ThemeMode
 import com.fusionlite.data.clean
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -44,6 +45,8 @@ import java.util.Locale
 @Composable
 fun AccountScreen(
     state: UiState,
+    themeMode: ThemeMode,
+    onThemeMode: (ThemeMode) -> Unit,
     onSelectStation: (String) -> Unit,
     onIntervalChange: (Int) -> Unit,
     onRefresh: () -> Unit,
@@ -53,6 +56,7 @@ fun AccountScreen(
     val station = state.stations.firstOrNull { it.dn == state.selectedDn } ?: state.stations.firstOrNull()
     val metrics = StationMetrics.from(station)
     val session = state.session
+    val palette = LocalFusionPalette.current
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -66,7 +70,7 @@ fun AccountScreen(
                     fontSize = 9.sp,
                     letterSpacing = 2.2.sp,
                     fontWeight = FontWeight.Bold,
-                    color = SolarGreen,
+                    color = palette.green,
                 )
                 Text(
                     station?.name ?: "Solar plant",
@@ -102,12 +106,12 @@ fun AccountScreen(
                                             .weight(1f)
                                             .clip(RoundedCornerShape(14.dp))
                                             .background(
-                                                if (selected) SolarGreen.copy(alpha = 0.16f)
-                                                else Color.White.copy(alpha = 0.04f)
+                                                if (selected) palette.green.copy(alpha = 0.16f)
+                                                else palette.glass
                                             )
                                             .border(
                                                 1.dp,
-                                                if (selected) SolarGreen.copy(alpha = 0.5f) else Color.Transparent,
+                                                if (selected) palette.green.copy(alpha = 0.5f) else Color.Transparent,
                                                 RoundedCornerShape(14.dp),
                                             )
                                             .clickable { s.dn?.let(onSelectStation) }
@@ -117,7 +121,7 @@ fun AccountScreen(
                                             s.name ?: s.dn ?: "Plant",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = if (selected) SolarGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            color = if (selected) palette.green else MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
@@ -126,6 +130,40 @@ fun AccountScreen(
                                 if (row.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        item {
+            InfoCard("Appearance") {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            themeMode.label,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            themeMode.caption(),
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    ThemeToggle(mode = themeMode, onMode = onThemeMode)
+                }
+                if (themeMode.isExplicit) {
+                    TextButton(
+                        onClick = { onThemeMode(ThemeMode.SYSTEM) },
+                        contentPadding = PaddingValues(0.dp),
+                    ) {
+                        Text("Follow the phone instead", fontSize = 11.sp, color = palette.cyan)
                     }
                 }
             }
@@ -143,12 +181,12 @@ fun AccountScreen(
                             Modifier
                                 .clip(CircleShape)
                                 .background(
-                                    if (selected) SolarCyan.copy(alpha = 0.18f)
-                                    else Color.White.copy(alpha = 0.04f)
+                                    if (selected) palette.cyan.copy(alpha = 0.18f)
+                                    else palette.glass
                                 )
                                 .border(
                                     1.dp,
-                                    if (selected) SolarCyan.copy(alpha = 0.55f) else Color.Transparent,
+                                    if (selected) palette.cyan.copy(alpha = 0.55f) else Color.Transparent,
                                     CircleShape,
                                 )
                                 .clickable { onIntervalChange(seconds) }
@@ -158,14 +196,14 @@ fun AccountScreen(
                                 "${seconds}s",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = if (selected) SolarCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (selected) palette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PillButton("Refresh now", SolarCyan, onRefresh)
+                    PillButton("Refresh now", palette.cyan, onRefresh)
                     TextButton(onClick = onLogout) {
                         Text("Sign out", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     }

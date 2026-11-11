@@ -6,6 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,13 +23,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -42,6 +52,8 @@ import com.fusionlite.data.SessionStore
 import com.fusionlite.data.StatisticsPeriod
 import com.fusionlite.data.StatisticsSnapshot
 import com.fusionlite.data.TariffStore
+import com.fusionlite.data.ThemeMode
+import com.fusionlite.data.ThemeStore
 import com.fusionlite.data.rangeLabel
 import com.fusionlite.data.shiftAnchor
 import com.fusionlite.ui.AccountScreen
@@ -53,6 +65,7 @@ import com.fusionlite.ui.FusionTheme
 import com.fusionlite.ui.LiquidBottomBar
 import com.fusionlite.ui.LoginScreen
 import com.fusionlite.ui.StatisticsScreen
+import com.fusionlite.ui.isDark
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,10 +79,41 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent {
-            FusionTheme {
-                SurfaceRoot { FusionLiteApp() }
-            }
+        setContent { FusionLiteRoot() }
+    }
+}
+
+@Composable
+private fun FusionLiteRoot() {
+    val context = LocalContext.current.applicationContext
+    val themeStore = remember { ThemeStore(context) }
+    var themeMode by remember { mutableStateOf(themeStore.mode()) }
+    val dark = themeMode.isDark()
+
+    // Edge-to-edge: the bars must invert together with the app theme, even
+    // when the user pins a theme that differs from the phone's setting.
+    val activity = generateSequence(LocalContext.current) { ctx ->
+        (ctx as? android.content.ContextWrapper)?.baseContext
+    }.firstOrNull { it is android.app.Activity } as? android.app.Activity
+    val windowBackground = MaterialTheme.colorScheme.background.toArgb()
+    SideEffect {
+        val window = activity?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+        window.decorView.setBackgroundColor(windowBackground)
+    }
+
+    FusionTheme(themeMode) {
+        SurfaceRoot {
+            FusionLiteApp(
+                themeMode = themeMode,
+                onThemeMode = { mode: ThemeMode ->
+                    themeStore.save(mode)
+                    themeMode = mode
+                },
+            )
         }
     }
 }
@@ -118,7 +162,10 @@ data class UiState(
 )
 
 @Composable
-private fun FusionLiteApp() {
+private fun FusionLiteApp(
+    themeMode: ThemeMode,
+    onThemeMode: (ThemeMode) -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val store = remember { SessionStore(context) }
     val tariffs = remember { TariffStore(context) }
@@ -564,141 +611,190 @@ private fun FusionLiteApp() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    if (chartFullscreen && state.loggedIn) {
-        val station = state.stations.firstOrNull { it.dn == state.selectedDn }
-            ?: state.stations.firstOrNull()
-        FullscreenChartScreen(
-            snapshot = state.stats,
-            period = state.statsPeriod,
-            loading = state.statsLoading,
-            stationName = station?.name ?: "Solar plant",
-            range = rangeLabel(state.statsPeriod, state.statsAnchor),
-            onClose = { chartFullscreen = false },
-            modifier = Modifier.fillMaxSize(),
-        )
-    } else if (state.loggedIn) {
-        val logout: () -> Unit = {
-            chartFullscreen = false
-            state = UiState(
-                refreshIntervalSeconds = state.refreshIntervalSeconds,
-                // Tariffs are device preferences, not account data.
-                buyPriceCents = state.buyPriceCents,
-                sellPriceCents = state.sellPriceCents,
-                costsPeriod = state.costsPeriod,
-                costsAnchor = state.costsAnchor,
-            )
-            pass = ""
-            scope.launch(Dispatchers.IO) { store.clear() }
-        }
-        val selectStation: (String) -> Unit = { dn ->
-            state = state.copy(
-                selectedDn = dn,
-                stats = null,
-                statsError = null,
-                costs = null,
-                costsError = null,
-            )
-            scope.launch { performRefresh() }
-        }
-        val refresh: () -> Unit = { scope.launch { performRefresh() } }
-
-        Box(Modifier.fillMaxSize()) {
-            when (state.tab) {
-                AppTab.HOME -> DashboardScreen(
-                    state = state,
-                    onRefresh = refresh,
-                    onSelectStation = selectStation,
-                    onIntervalChange = { seconds ->
-                        state = state.copy(refreshIntervalSeconds = seconds)
-                    },
-                    onLogout = logout,
-                )
-
-                AppTab.STATS -> StatisticsScreen(
-                    state = state,
-                    onPeriod = { period ->
-                        state = state.copy(statsPeriod = period, stats = null, statsError = null)
-                    },
-                    onShift = { delta ->
-                        state = state.copy(
-                            statsAnchor = shiftAnchor(state.statsPeriod, state.statsAnchor, delta),
-                            stats = null,
-                            statsError = null,
-                        )
-                    },
-                    onRefresh = { scope.launch { performStatistics() } },
-                    onExpandChart = { chartFullscreen = true },
-                )
-
-                AppTab.COSTS -> CostsScreen(
-                    state = state,
-                    onPeriod = { period ->
-                        state = state.copy(costsPeriod = period, costs = null, costsError = null)
-                    },
-                    onShift = { delta ->
-                        state = state.copy(
-                            costsAnchor = shiftAnchor(state.costsPeriod, state.costsAnchor, delta),
-                            costs = null,
-                            costsError = null,
-                        )
-                    },
-                    onRefresh = { scope.launch { performCosts() } },
-                    onBuyPrice = { value ->
-                        state = state.copy(buyPriceCents = value)
-                        tariffs.saveBuy(value)
-                    },
-                    onSellPrice = { value ->
-                        state = state.copy(sellPriceCents = value)
-                        tariffs.saveSell(value)
-                    },
-                )
-
-                AppTab.ACCOUNT -> AccountScreen(
-                    state = state,
-                    onSelectStation = selectStation,
-                    onIntervalChange = { seconds ->
-                        state = state.copy(refreshIntervalSeconds = seconds)
-                    },
-                    onRefresh = refresh,
-                    onLogout = logout,
+    AnimatedContent(
+        targetState = when {
+            chartFullscreen && state.loggedIn -> "chart"
+            state.loggedIn -> "app"
+            else -> "login"
+        },
+        transitionSpec = {
+            (
+                fadeIn(tween(360)) +
+                    slideInHorizontally(tween(440)) { width -> width / 16 }
+                ) togetherWith fadeOut(tween(220))
+        },
+        label = "screen",
+        modifier = Modifier.fillMaxSize(),
+    ) { screen ->
+        when (screen) {
+            "chart" -> {
+                val station = state.stations.firstOrNull { it.dn == state.selectedDn }
+                    ?: state.stations.firstOrNull()
+                FullscreenChartScreen(
+                    snapshot = state.stats,
+                    period = state.statsPeriod,
+                    loading = state.statsLoading,
+                    stationName = station?.name ?: "Solar plant",
+                    range = rangeLabel(state.statsPeriod, state.statsAnchor),
+                    onClose = { chartFullscreen = false },
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
 
-            LiquidBottomBar(
-                selected = state.tab,
-                onSelect = { tab -> state = state.copy(tab = tab) },
+            "app" -> {
+                val logout: () -> Unit = {
+                    chartFullscreen = false
+                    state = UiState(
+                        refreshIntervalSeconds = state.refreshIntervalSeconds,
+                        // Tariffs are device preferences, not account data.
+                        buyPriceCents = state.buyPriceCents,
+                        sellPriceCents = state.sellPriceCents,
+                        costsPeriod = state.costsPeriod,
+                        costsAnchor = state.costsAnchor,
+                    )
+                    pass = ""
+                    scope.launch(Dispatchers.IO) { store.clear() }
+                }
+                val selectStation: (String) -> Unit = { dn ->
+                    state = state.copy(
+                        selectedDn = dn,
+                        stats = null,
+                        statsError = null,
+                        costs = null,
+                        costsError = null,
+                    )
+                    scope.launch { performRefresh() }
+                }
+                val refresh: () -> Unit = { scope.launch { performRefresh() } }
+
+                Box(Modifier.fillMaxSize()) {
+                    AnimatedContent(
+                        targetState = state.tab,
+                        transitionSpec = {
+                            val forward = targetState.ordinal > initialState.ordinal
+                            (
+                                fadeIn(tween(340)) +
+                                    slideInHorizontally(tween(430)) { width ->
+                                        if (forward) width / 7 else -width / 7
+                                    }
+                                ) togetherWith (
+                                fadeOut(tween(220)) +
+                                    slideOutHorizontally(tween(430)) { width ->
+                                        if (forward) -width / 7 else width / 7
+                                    }
+                                )
+                        },
+                        label = "tab",
+                        modifier = Modifier.fillMaxSize(),
+                    ) { tab ->
+                        when (tab) {
+                            AppTab.HOME -> DashboardScreen(
+                                state = state,
+                                onRefresh = refresh,
+                                onSelectStation = selectStation,
+                                onIntervalChange = { seconds ->
+                                    state = state.copy(refreshIntervalSeconds = seconds)
+                                },
+                                onLogout = logout,
+                            )
+
+                            AppTab.STATS -> StatisticsScreen(
+                                state = state,
+                                onPeriod = { period ->
+                                    state = state.copy(statsPeriod = period, stats = null, statsError = null)
+                                },
+                                onShift = { delta ->
+                                    state = state.copy(
+                                        statsAnchor = shiftAnchor(state.statsPeriod, state.statsAnchor, delta),
+                                        stats = null,
+                                        statsError = null,
+                                    )
+                                },
+                                onRefresh = { scope.launch { performStatistics() } },
+                                onExpandChart = { chartFullscreen = true },
+                            )
+
+                            AppTab.COSTS -> CostsScreen(
+                                state = state,
+                                onPeriod = { period ->
+                                    state = state.copy(costsPeriod = period, costs = null, costsError = null)
+                                },
+                                onShift = { delta ->
+                                    state = state.copy(
+                                        costsAnchor = shiftAnchor(state.costsPeriod, state.costsAnchor, delta),
+                                        costs = null,
+                                        costsError = null,
+                                    )
+                                },
+                                onRefresh = { scope.launch { performCosts() } },
+                                onBuyPrice = { value ->
+                                    state = state.copy(buyPriceCents = value)
+                                    tariffs.saveBuy(value)
+                                },
+                                onSellPrice = { value ->
+                                    state = state.copy(sellPriceCents = value)
+                                    tariffs.saveSell(value)
+                                },
+                            )
+
+                            AppTab.ACCOUNT -> AccountScreen(
+                                state = state,
+                                themeMode = themeMode,
+                                onThemeMode = onThemeMode,
+                                onSelectStation = selectStation,
+                                onIntervalChange = { seconds ->
+                                    state = state.copy(refreshIntervalSeconds = seconds)
+                                },
+                                onRefresh = refresh,
+                                onLogout = logout,
+                            )
+                        }
+                    }
+
+                    LiquidBottomBar(
+                        selected = state.tab,
+                        onSelect = { tab -> state = state.copy(tab = tab) },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp)
+                            .padding(bottom = 10.dp),
+                    )
+                }
+            }
+
+            else -> LoginScreen(
+                user = user,
+                onUser = { user = it },
+                pass = pass,
+                onPass = { pass = it },
+                host = host,
+                onHost = { host = it },
+                port = port,
+                onPort = { port = it },
+                loading = state.loading,
+                message = state.message,
+                themeMode = themeMode,
+                onThemeMode = onThemeMode,
+                onLogin = {
+                    val loginHost = host.trim()
+                        .removePrefix("https://")
+                        .removePrefix("http://")
+                        .substringBefore('/')
+                        .ifBlank { FusionSolarConfig.DEFAULT_HOST }
+                    scope.launch {
+                        performLogin(
+                            user.trim(),
+                            pass,
+                            loginHost,
+                            port.trim().ifBlank { FusionSolarConfig.DEFAULT_PORT },
+                        )
+                    }
+                },
                 modifier = Modifier
-                    .align(androidx.compose.ui.Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 10.dp),
+                    .fillMaxSize()
+                    .padding(bottom = 0.dp),
             )
         }
-    } else {
-        LoginScreen(
-            user = user,
-            onUser = { user = it },
-            pass = pass,
-            onPass = { pass = it },
-            host = host,
-            onHost = { host = it },
-            port = port,
-            onPort = { port = it },
-            loading = state.loading,
-            message = state.message,
-            onLogin = {
-                val loginHost = host.trim()
-                    .removePrefix("https://")
-                    .removePrefix("http://")
-                    .substringBefore('/')
-                    .ifBlank { FusionSolarConfig.DEFAULT_HOST }
-                scope.launch {
-                    performLogin(user.trim(), pass, loginHost, port.trim().ifBlank { FusionSolarConfig.DEFAULT_PORT })
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 0.dp),
-        )
     }
 }

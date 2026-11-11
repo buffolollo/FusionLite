@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fusionlite.api.FusionSolarConfig
+import com.fusionlite.data.ThemeMode
 
 @Composable
 fun LoginScreen(
@@ -51,18 +52,19 @@ fun LoginScreen(
     onPort: (String) -> Unit,
     loading: Boolean,
     message: String?,
+    themeMode: ThemeMode,
+    onThemeMode: (ThemeMode) -> Unit,
     onLogin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var advanced by remember { mutableStateOf(false) }
+    val palette = LocalFusionPalette.current
 
     Box(
         modifier
             .fillMaxSize()
             .background(
-                Brush.verticalGradient(
-                    listOf(Color(0xFF081226), Color(0xFF0D1D36), Color(0xFF07101F))
-                )
+                Brush.verticalGradient(palette.loginGradient)
             )
     ) {
         SolarPanelScene(
@@ -84,19 +86,21 @@ fun LoginScreen(
                 "FusionLite",
                 fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = palette.loginTitle,
             )
             Text(
                 "Your solar plant, live and beautifully simple.",
                 fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.72f),
+                color = palette.loginSubtitle,
             )
             Spacer(Modifier.height(6.dp))
 
             Card(
                 shape = RoundedCornerShape(26.dp),
-                colors = CardDefaults.cardColors(containerColor = NightSurface.copy(alpha = 0.96f)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, NightOutline),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -105,7 +109,7 @@ fun LoginScreen(
                         fontSize = 10.sp,
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.Bold,
-                        color = SolarCyan,
+                        color = palette.cyan,
                     )
                     OutlinedTextField(
                         value = user,
@@ -140,7 +144,7 @@ fun LoginScreen(
                         Text(
                             if (advanced) "hide ▲" else "show ▼",
                             fontSize = 11.sp,
-                            color = SolarCyan,
+                            color = palette.cyan,
                         )
                     }
                     if (advanced) {
@@ -202,9 +206,18 @@ fun LoginScreen(
             Text(
                 "Default server: ${FusionSolarConfig.DEFAULT_HOST}:${FusionSolarConfig.DEFAULT_PORT}",
                 fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.35f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
         }
+        // Drawn after the scroll column so it stays above the content and
+        // remains tappable.
+        ThemeToggle(
+            mode = themeMode,
+            onMode = onThemeMode,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(22.dp),
+        )
     }
 }

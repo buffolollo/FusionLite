@@ -92,6 +92,7 @@ fun ProductionAreaChart(
     emptyLabel: String = "No production recorded for this window",
 ) {
     var selected by remember(points) { mutableIntStateOf(-1) }
+    val palette = LocalFusionPalette.current
     val reveal = remember(points) { Animatable(0f) }
     LaunchedEffect(points) {
         reveal.snapTo(0f)
@@ -127,8 +128,8 @@ fun ProductionAreaChart(
             val stepX = if (points.size <= 1) 0f else (right - left) / (points.size - 1)
 
             // Grid + y labels
-            val gridColor = Color.White.copy(alpha = 0.07f)
-            val labelColor = Color.White.copy(alpha = LABEL_ALPHA)
+            val gridColor = palette.chartGrid
+            val labelColor = palette.chartLabel
             for (i in 0..4) {
                 val y = bottom - chartH * i / 4f
                 drawLine(
@@ -225,7 +226,7 @@ fun ProductionAreaChart(
                 val tagX = (p.x - tagWidth / 2f).coerceIn(2.dp.toPx(), size.width - tagWidth - 2.dp.toPx())
                 val tagY = (p.y - 30.dp.toPx()).coerceAtLeast(0f)
                 drawRoundRect(
-                    color = NightSurfaceHigh.copy(alpha = 0.96f),
+                    color = palette.surfaceHigh.copy(alpha = 0.96f),
                     topLeft = Offset(tagX, tagY),
                     size = Size(tagWidth, 20.dp.toPx()),
                     cornerRadius = CornerRadius(10.dp.toPx()),
@@ -241,7 +242,7 @@ fun ProductionAreaChart(
                     tag,
                     tagX + tagWidth / 2f,
                     tagY + 14.dp.toPx(),
-                    Color.White,
+                    palette.chartTagText,
                     9.sp.toPx(),
                 )
             }
@@ -271,6 +272,7 @@ fun GroupedEnergyBars(
     emptyLabel: String = "No series available",
 ) {
     val reveal = remember(primary, secondary) { Animatable(0f) }
+    val palette = LocalFusionPalette.current
     LaunchedEffect(primary, secondary) {
         reveal.snapTo(0f)
         reveal.animateTo(1f, tween(650))
@@ -292,7 +294,7 @@ fun GroupedEnergyBars(
             for (i in 0..3) {
                 val y = bottom - chartH * i / 3f
                 drawLine(
-                    Color.White.copy(alpha = 0.07f),
+                    palette.chartGrid,
                     Offset(left, y),
                     Offset(right, y),
                     strokeWidth = if (i == 0) 1.4f else 1f,
@@ -301,7 +303,7 @@ fun GroupedEnergyBars(
                     compact(maxValue * i / 3.0),
                     left - 6.dp.toPx(),
                     y + 4.dp.toPx(),
-                    Color.White.copy(alpha = LABEL_ALPHA),
+                    palette.chartLabel,
                     9.sp.toPx(),
                     align = android.graphics.Paint.Align.RIGHT,
                 )
@@ -341,7 +343,7 @@ fun GroupedEnergyBars(
                         primary[index].label,
                         center.coerceIn(left, right),
                         size.height - 5.dp.toPx(),
-                        Color.White.copy(alpha = LABEL_ALPHA),
+                        palette.chartLabel,
                         8.5.sp.toPx(),
                     )
                 }
@@ -373,6 +375,7 @@ fun EnergyDonut(
 ) {
     val positive = segments.filter { it.value > 0.0 }
     val total = positive.sumOf { it.value }
+    val palette = LocalFusionPalette.current
     val sweep = remember(segments) { Animatable(0f) }
     LaunchedEffect(segments) {
         sweep.snapTo(0f)
@@ -387,7 +390,7 @@ fun EnergyDonut(
             val arcSize = Size(diameter, diameter)
 
             drawArc(
-                color = Color.White.copy(alpha = 0.06f),
+                color = palette.glassStrong,
                 startAngle = 0f,
                 sweepAngle = 360f,
                 useCenter = false,
@@ -447,7 +450,7 @@ fun EnergyDonut(
                 centerValue,
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             if (centerCaption.isNotEmpty()) {
                 Text(
@@ -470,6 +473,7 @@ fun MetricBar(
     unit: String = "kWh",
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalFusionPalette.current
     val animated = androidx.compose.animation.core.animateFloatAsState(
         targetValue = fraction.coerceIn(0f, 1f),
         animationSpec = tween(720),
@@ -499,7 +503,7 @@ fun MetricBar(
             Modifier
                 .fillMaxWidth()
                 .height(6.dp)
-                .background(Color.White.copy(alpha = 0.06f), androidx.compose.foundation.shape.RoundedCornerShape(50)),
+                .background(palette.glassStrong, androidx.compose.foundation.shape.RoundedCornerShape(50)),
         ) {
             Box(
                 Modifier
@@ -522,6 +526,8 @@ fun RatioGauge(
     caption: String,
     modifier: Modifier = Modifier,
 ) {
+    val palette = LocalFusionPalette.current
+    val onSurface = MaterialTheme.colorScheme.onSurface
     val animated = androidx.compose.animation.core.animateFloatAsState(
         targetValue = ratio.coerceIn(0f, 1f),
         animationSpec = tween(850),
@@ -534,7 +540,7 @@ fun RatioGauge(
             val tl = Offset((size.width - d) / 2f, (size.height - d) / 2f)
             val arcSize = Size(d, d)
             drawArc(
-                Color.White.copy(alpha = 0.07f),
+                palette.glassStrong,
                 startAngle = 135f,
                 sweepAngle = 270f,
                 useCenter = false,
@@ -556,7 +562,7 @@ fun RatioGauge(
             val angle = (135f + 270f * animated.value) * PI.toFloat() / 180f
             val r = d / 2f
             drawCircle(
-                color = Color.White,
+                color = onSurface,
                 radius = 2.2.dp.toPx(),
                 center = Offset(
                     size.width / 2f + cos(angle) * r,
