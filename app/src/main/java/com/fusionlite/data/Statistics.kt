@@ -93,21 +93,21 @@ data class StatisticsSnapshot(
     val discharge: Double get() = totalOf(batteryDischarge())
 
     /**
-     * Headline number for the selected window. Prefers the energy balance
-     * (server total or bucket sum) and falls back to station-real-kpi when the
-     * chart endpoint returned nothing.
+     * Headline number for the selected window. `totalProductPower` is the
+     * server's energy total for exactly that window, so it is preferred for
+     * every period. `station-real-kpi` is only a fallback: it is anchored on
+     * the selected date too, but the shipped app's header values are naturally
+     * "current" values and must never override a historical chart total.
      */
     val headlineProduction: Double?
         get() {
-            // For the daily window the energy-balance series is instantaneous
-            // power (kW); the day's kWh total is authoritative in real-kpi.
-            if (period == StatisticsPeriod.DAY) {
-                parseNum(kpi?.dailyEnergy)?.let { return it }
-            }
-            val fromBalance = if (hasChart || balance?.totalProductPower != null) {
-                periodProduction
-            } else {
-                null
+            val fromBalance = when {
+                balance?.totalProductPower != null -> periodProduction
+                // The DAY series is instantaneous power (kW); summing its
+                // samples is meaningless, so a day without the server total
+                // must fall back to station-real-kpi instead.
+                hasChart && period != StatisticsPeriod.DAY -> periodProduction
+                else -> null
             }
             if (fromBalance != null && fromBalance > 0.0) return fromBalance
             val fallback = when (period) {
@@ -241,14 +241,19 @@ fun EnergyBalanceRequest.asQueryParams(): Map<String, String> = mapOf(
 
 /**
  * `ChartModeKpiHeaderViewModel.querySingleRealKpi` request body:
- * stationDn, queryTime (midnight today), timeZone.
+ * stationDn, queryTime (midnight of the day being inspected), timeZone.
+ *
+ * The shipped app calls this for "now", but the response is anchored on
+ * `queryTime`: `dailyEnergy` is that day's energy, `monthEnergy` that month's
+ * and `yearEnergy` that year's. Passing the selected window's start is what
+ * keeps the analytics headline in sync with the ‹ › navigation.
  */
 fun stationRealKpiRequest(
     stationDn: String,
-    nowMillis: Long = System.currentTimeMillis(),
+    forMillis: Long = System.currentTimeMillis(),
 ): StationRealKpiRequest {
-    val today = Instant.ofEpochMilli(nowMillis).atZone(zone()).toLocalDate()
-    val midnight = today.atStartOfDay(zone()).toInstant().toEpochMilli()
+    val day = Instant.ofEpochMilli(forMillis).atZone(zone()).toLocalDate()
+    val midnight = day.atStartOfDay(zone()).toInstant().toEpochMilli()
     return StationRealKpiRequest(
         stationDn = stationDn,
         queryTime = midnight,
@@ -268,6 +273,44 @@ fun rangeLabel(period: StatisticsPeriod, anchorMillis: Long): String {
         StatisticsPeriod.MONTH -> "$month ${date.year}"
         StatisticsPeriod.YEAR, StatisticsPeriod.TOTAL -> "${date.year}"
     }
+}
+
+/** True when [anchorMillis] already points at the current day/month/year. */
+fun isCurrentWindow(period: StatisticsPeriod, anchorMillis: Long): Boolean {
+    val today = LocalDate.now(zone())
+    val date = Instant.ofEpochMilli(anchorMillis).atZone(zone()).toLocalDate()
+    return when (period) {
+        StatisticsPeriod.DAY -> date == today
+        StatisticsPeriod.MONTH -> date.year == today.year && date.month == today.month
+        StatisticsPeriod.YEAR -> date.year == today.year
+        StatisticsPeriod.TOTAL -> true
+    }
+}
+
+/**
+ * Hero caption for the selected window. Uses the concrete date when the user
+ * has navigated away from the current day/month/year, so "today" is never
+ * shown for a historical window.
+ */
+fun productionWindowTitle(period: StatisticsPeriod, anchorMillis: Long): String {
+    val current = isCurrentWindow(period, anchorMillis)
+    return when (period) {
+        StatisticsPeriod.DAY ->
+            if (current) "Energy generated today" else "Energy generated on ${rangeLabel(period, anchorMillis)}"
+        StatisticsPeriod.MONTH ->
+            if (current) "Energy generated this month" else "Energy generated in ${rangeLabel(period, anchorMillis)}"
+        StatisticsPeriod.YEAR ->
+            if (current) "Energy generated this year" else "Energy generated in ${rangeLabel(period, anchorMillis)}"
+        StatisticsPeriod.TOTAL -> "Lifetime energy generated"
+    }
+}
+
+/** Label for the "jump back to now" affordance. */
+fun currentWindowLabel(period: StatisticsPeriod): String = when (period) {
+    StatisticsPeriod.DAY -> "Today"
+    StatisticsPeriod.MONTH -> "This month"
+    StatisticsPeriod.YEAR -> "This year"
+    StatisticsPeriod.TOTAL -> "Lifetime"
 }
 
 /** Move the window by [delta] units (day / month / year / year for Total). */
@@ -291,5 +334,5 @@ fun canNavigateForward(period: StatisticsPeriod, anchorMillis: Long): Boolean {
         StatisticsPeriod.YEAR -> date.plusYears(1).withDayOfYear(1)
         StatisticsPeriod.TOTAL -> return false
     }
-    return !next.isAfter(today.plusDays(1))
+    return !next.isAfter(today)
 }

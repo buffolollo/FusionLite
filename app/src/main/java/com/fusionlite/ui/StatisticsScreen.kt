@@ -1,6 +1,10 @@
 package com.fusionlite.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -51,7 +55,10 @@ import com.fusionlite.data.StatisticsPeriod
 import com.fusionlite.data.StatisticsSnapshot
 import com.fusionlite.data.canNavigateForward
 import com.fusionlite.data.clean
+import com.fusionlite.data.currentWindowLabel
+import com.fusionlite.data.isCurrentWindow
 import com.fusionlite.data.parseNum
+import com.fusionlite.data.productionWindowTitle
 import com.fusionlite.data.rangeLabel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -77,6 +84,7 @@ fun StatisticsScreen(
     onShift: (Int) -> Unit,
     onRefresh: () -> Unit,
     onExpandChart: () -> Unit = {},
+    onToday: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val snapshot = state.stats
@@ -108,6 +116,7 @@ fun StatisticsScreen(
                 period = state.statsPeriod,
                 anchorMillis = state.statsAnchor,
                 onShift = onShift,
+                onToday = onToday,
             )
         }
 
@@ -115,7 +124,7 @@ fun StatisticsScreen(
             item { StatsErrorBanner(error, onRefresh) }
         }
 
-        item { HeroProduction(snapshot, state.statsPeriod, state.statsLoading) }
+        item { HeroProduction(snapshot, state.statsPeriod, state.statsAnchor, state.statsLoading) }
 
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -286,7 +295,12 @@ internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPer
 }
 
 @Composable
-internal fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShift: (Int) -> Unit) {
+internal fun PeriodNavigator(
+    period: StatisticsPeriod,
+    anchorMillis: Long,
+    onShift: (Int) -> Unit,
+    onToday: (() -> Unit)? = null,
+) {
     val palette = LocalFusionPalette.current
     Row(
         Modifier
@@ -297,25 +311,71 @@ internal fun PeriodNavigator(period: StatisticsPeriod, anchorMillis: Long, onShi
     ) {
         Text(
             rangeLabel(period, anchorMillis),
+            modifier = Modifier.weight(1f, fill = false),
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        if (period != StatisticsPeriod.TOTAL) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.width(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onToday != null) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !isCurrentWindow(period, anchorMillis),
+                    enter = fadeIn(tween(220)) + scaleIn(tween(260), initialScale = 0.85f),
+                    exit = fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 0.85f),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        JumpToNowChip(
+                            label = currentWindowLabel(period),
+                            color = palette.cyan,
+                            onClick = onToday,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                }
+            }
+            if (period != StatisticsPeriod.TOTAL) {
                 NavArrow("‹") { onShift(-1) }
                 Spacer(Modifier.width(6.dp))
                 NavArrow("›", enabled = canNavigateForward(period, anchorMillis)) { onShift(1) }
+            } else {
+                Text(
+                    "Lifecycle",
+                    fontSize = 10.sp,
+                    letterSpacing = 1.4.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.gold,
+                )
             }
-        } else {
-            Text(
-                "Lifecycle",
-                fontSize = 10.sp,
-                letterSpacing = 1.4.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.gold,
-            )
         }
+    }
+}
+
+/** Small pill that resets the window back to today / this month / this year. */
+@Composable
+private fun JumpToNowChip(label: String, color: Color, onClick: () -> Unit) {
+    val palette = LocalFusionPalette.current
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(palette.glass)
+            .border(1.dp, color.copy(alpha = 0.45f), CircleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "↺ $label",
+            fontSize = 9.sp,
+            letterSpacing = 0.4.sp,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            maxLines = 1,
+        )
     }
 }
 
@@ -370,15 +430,15 @@ internal fun StatsErrorBanner(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun HeroProduction(snapshot: StatisticsSnapshot?, period: StatisticsPeriod, loading: Boolean) {
+private fun HeroProduction(
+    snapshot: StatisticsSnapshot?,
+    period: StatisticsPeriod,
+    anchorMillis: Long,
+    loading: Boolean,
+) {
     val palette = LocalFusionPalette.current
     val value = snapshot?.headlineProduction
-    val subtitle = when (period) {
-        StatisticsPeriod.DAY -> "Energy generated today"
-        StatisticsPeriod.MONTH -> "Energy generated this month"
-        StatisticsPeriod.YEAR -> "Energy generated this year"
-        StatisticsPeriod.TOTAL -> "Lifetime energy generated"
-    }
+    val subtitle = productionWindowTitle(period, anchorMillis)
     Box(
         Modifier
             .fillMaxWidth()
@@ -863,7 +923,7 @@ private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    KpiInline("Today", parseNum(kpi.dailyEnergy))
+                    KpiInline("Day", parseNum(kpi.dailyEnergy))
                     KpiInline("Month", parseNum(kpi.monthEnergy))
                     KpiInline("Year", parseNum(kpi.yearEnergy))
                     KpiInline("Lifetime", parseNum(kpi.cumulativeEnergy))

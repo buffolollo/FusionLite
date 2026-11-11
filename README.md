@@ -161,7 +161,12 @@ The **Analytics** tab (`ui/StatisticsScreen.kt`, `ui/StatisticsCharts.kt`) is a
 custom statistics dashboard:
 
 - Day / Month / Year / Total period pill with ‹ › window navigation.
-- Hero production total, peak, server total and three mini KPIs.
+- A small “↺ Today / This month / This year” chip appears whenever the
+  selected window has moved away from the current one and jumps back to it.
+- Hero production total, peak, server total and three mini KPIs. The headline
+  is the energy-balance `totalProductPower` for the *selected* window, so it
+  follows the arrows instead of staying on today's value; the caption names the
+  concrete date when it is historical.
 - Hand-drawn chart modes: gradient **Curve** (tap a bucket to inspect it),
   grouped **Bars** (production vs consumption) and **Mix** (animated energy
   donut with self-use/export/charge/import segments).

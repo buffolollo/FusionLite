@@ -712,6 +712,13 @@ private fun FusionLiteApp(
                                 },
                                 onRefresh = { scope.launch { performStatistics() } },
                                 onExpandChart = { chartFullscreen = true },
+                                onToday = {
+                                    state = state.copy(
+                                        statsAnchor = System.currentTimeMillis(),
+                                        stats = null,
+                                        statsError = null,
+                                    )
+                                },
                             )
 
                             AppTab.COSTS -> CostsScreen(
@@ -727,6 +734,13 @@ private fun FusionLiteApp(
                                     )
                                 },
                                 onRefresh = { scope.launch { performCosts() } },
+                                onToday = {
+                                    state = state.copy(
+                                        costsAnchor = System.currentTimeMillis(),
+                                        costs = null,
+                                        costsError = null,
+                                    )
+                                },
                                 onBuyPrice = { value ->
                                     state = state.copy(buyPriceCents = value)
                                     tariffs.saveBuy(value)

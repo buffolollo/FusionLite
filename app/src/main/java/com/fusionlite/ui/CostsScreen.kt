@@ -56,6 +56,7 @@ fun CostsScreen(
     onRefresh: () -> Unit,
     onBuyPrice: (String) -> Unit,
     onSellPrice: (String) -> Unit,
+    onToday: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val station = state.stations.firstOrNull { it.dn == state.selectedDn }
@@ -88,6 +89,7 @@ fun CostsScreen(
                 period = state.costsPeriod,
                 anchorMillis = state.costsAnchor,
                 onShift = onShift,
+                onToday = onToday,
             )
         }
 

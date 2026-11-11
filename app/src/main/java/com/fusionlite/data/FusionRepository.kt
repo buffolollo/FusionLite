@@ -224,8 +224,10 @@ class FusionRepository(context: Context) {
         val warnings = mutableListOf<String>()
 
         // The same 405-transport problem affects station-real-kpi on some
-        // regional hosts; try the POST form, then the GET form.
-        val kpiRequest = stationRealKpiRequest(stationDn)
+        // regional hosts; try the POST form, then the GET form. The request is
+        // anchored on the selected window, not "now", so the day/month/year
+        // headline follows the ‹ › navigation like the energy-balance chart.
+        val kpiRequest = stationRealKpiRequest(stationDn, queryTimeFor(period, anchorMillis))
         val kpiQuery = kpiRequest.asQueryParams()
         var kpi: StationRealKpi? = null
         val kpiFailures = mutableListOf<String>()
