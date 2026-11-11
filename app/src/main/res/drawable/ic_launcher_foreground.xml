@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Scales the artwork to 60% of the adaptive icon layer so the complete
+     illustration stays inside the launcher's 72dp mask/safe zone. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/app_icon"
-    android:inset="9%" />
+    android:inset="20%" />
