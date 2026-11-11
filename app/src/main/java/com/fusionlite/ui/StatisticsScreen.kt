@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +76,7 @@ fun StatisticsScreen(
     onPeriod: (StatisticsPeriod) -> Unit,
     onShift: (Int) -> Unit,
     onRefresh: () -> Unit,
+    onExpandChart: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val snapshot = state.stats
@@ -146,6 +149,7 @@ fun StatisticsScreen(
                 snapshot = snapshot,
                 period = state.statsPeriod,
                 loading = state.statsLoading,
+                onExpand = onExpandChart,
             )
         }
 
@@ -482,6 +486,7 @@ private fun ChartCard(
     snapshot: StatisticsSnapshot?,
     period: StatisticsPeriod,
     loading: Boolean,
+    onExpand: () -> Unit,
 ) {
     var mode by remember { androidx.compose.runtime.mutableStateOf(ChartMode.CURVE) }
     // Evidence: PhotovoltaicStatisticsViewModel.getLeftUnit — the day series is
@@ -511,7 +516,13 @@ private fun ChartCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                ModeToggle(mode) { mode = it }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ModeToggle(mode) { mode = it }
+                    if (mode == ChartMode.CURVE) ExpandButton(onExpand)
+                }
             }
             Spacer(Modifier.height(10.dp))
 
@@ -599,6 +610,35 @@ private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
             ) {
                 Text(item.label, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = textColor)
             }
+        }
+    }
+}
+
+/** Four corner brackets: opens the chart in full-screen landscape. */
+@Composable
+private fun ExpandButton(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(1.dp, SolarCyan.copy(alpha = 0.25f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(14.dp)) {
+            val stroke = 1.6.dp.toPx()
+            val len = size.minDimension * 0.38f
+            val w = size.width
+            val h = size.height
+            drawLine(SolarCyan, Offset(0f, len), Offset(0f, 0f), stroke)
+            drawLine(SolarCyan, Offset(0f, 0f), Offset(len, 0f), stroke)
+            drawLine(SolarCyan, Offset(w - len, 0f), Offset(w, 0f), stroke)
+            drawLine(SolarCyan, Offset(w, 0f), Offset(w, len), stroke)
+            drawLine(SolarCyan, Offset(0f, h - len), Offset(0f, h), stroke)
+            drawLine(SolarCyan, Offset(0f, h), Offset(len, h), stroke)
+            drawLine(SolarCyan, Offset(w - len, h), Offset(w, h), stroke)
+            drawLine(SolarCyan, Offset(w, h), Offset(w, h - len), stroke)
         }
     }
 }
@@ -896,6 +936,94 @@ private fun StatsFooter(
             },
             fontSize = 9.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
+    }
+}
+
+/**
+ * Full-screen, landscape-oriented presentation of the production/power curve.
+ * Entered from the expand glyph on [ChartCard]; the host activity forces sensor
+ * landscape and hides the system bars while this composable is shown.
+ */
+@Composable
+fun FullscreenChartScreen(
+    snapshot: StatisticsSnapshot?,
+    period: StatisticsPeriod,
+    loading: Boolean,
+    stationName: String,
+    range: String,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val production = remember(snapshot) { snapshot?.production().orEmpty() }
+    val chartUnit = if (period == StatisticsPeriod.DAY) "kW" else "kWh"
+
+    Column(
+        modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 22.dp, vertical = 14.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (period == StatisticsPeriod.DAY) "POWER CURVE" else "PRODUCTION PROFILE",
+                    fontSize = 9.sp,
+                    letterSpacing = 2.2.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SolarCyan,
+                )
+                Text(
+                    "$stationName · $range",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "${production.size} buckets · $chartUnit",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box(
+                Modifier
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.05f))
+                    .border(1.dp, SolarCyan.copy(alpha = 0.30f), CircleShape)
+                    .clickable(onClick = onClose)
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+            ) {
+                Text(
+                    "CLOSE",
+                    fontSize = 9.sp,
+                    letterSpacing = 1.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SolarCyan,
+                )
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+        ProductionAreaChart(
+            points = production,
+            accent = SolarGold,
+            unit = chartUnit,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            emptyLabel = if (loading) "Loading production…" else "No production recorded for this window",
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Tap the curve to inspect a bucket · rotate back or tap CLOSE to return",
+            fontSize = 9.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
     }
 }

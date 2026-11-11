@@ -34,11 +34,20 @@ class SessionStore(context: Context) :
         val dataPort: String?,
         val accessToken: String?,
         val roaRand: String?,
+        val refreshToken: String?,
         val selectedDn: String?,
         val appClientId: String,
     ) {
         val hasSession: Boolean get() = !accessToken.isNullOrBlank() && !dataHost.isNullOrBlank()
-        val canRelogin: Boolean get() = !username.isNullOrBlank() && !password.isNullOrBlank()
+
+        /**
+         * Either the long-lived refresh token or the encrypted password is
+         * enough to renew the session. Refresh-token renewal is preferred since
+         * it does not depend on the Keystore key that encrypts the password.
+         */
+        val canRelogin: Boolean
+            get() = !refreshToken.isNullOrBlank() ||
+                (!username.isNullOrBlank() && !password.isNullOrBlank())
 
         fun toSession(): Session? {
             if (!hasSession) return null
@@ -47,6 +56,7 @@ class SessionStore(context: Context) :
                 port = dataPort ?: port,
                 accessToken = accessToken!!,
                 roaRand = roaRand.orEmpty(),
+                refreshToken = refreshToken,
             )
         }
     }
@@ -64,6 +74,7 @@ class SessionStore(context: Context) :
                 data_port TEXT,
                 access_token TEXT,
                 roa_rand TEXT,
+                refresh_token TEXT,
                 selected_dn TEXT,
                 app_client_id TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
@@ -73,9 +84,15 @@ class SessionStore(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Single-row cache: safe to recreate when the schema changes.
-        db.execSQL("DROP TABLE IF EXISTS $TABLE")
-        onCreate(db)
+        if (oldVersion < 2) {
+            // Keep the existing login/session; only the renewal token is new.
+            db.execSQL("ALTER TABLE $TABLE ADD COLUMN refresh_token TEXT")
+        }
+        if (newVersion > 2) {
+            // Single-row cache: safe to recreate for future schema changes.
+            db.execSQL("DROP TABLE IF EXISTS $TABLE")
+            onCreate(db)
+        }
     }
 
     fun load(): Saved? {
@@ -97,6 +114,7 @@ class SessionStore(context: Context) :
                 dataPort = text("data_port"),
                 accessToken = text("access_token"),
                 roaRand = text("roa_rand"),
+                refreshToken = text("refresh_token"),
                 selectedDn = text("selected_dn"),
                 appClientId = text("app_client_id") ?: newClientId(),
             )
@@ -121,6 +139,7 @@ class SessionStore(context: Context) :
         dataPort = session.port,
         accessToken = session.accessToken,
         roaRand = session.roaRand,
+        refreshToken = session.refreshToken,
         selectedDn = selectedDn,
         appClientId = appClientId,
     )
@@ -140,6 +159,7 @@ class SessionStore(context: Context) :
             dataPort = session.port,
             accessToken = session.accessToken,
             roaRand = session.roaRand,
+            refreshToken = session.refreshToken ?: current.refreshToken,
             selectedDn = selectedDn,
             appClientId = appClientId,
         )
@@ -184,6 +204,7 @@ class SessionStore(context: Context) :
         dataPort: String?,
         accessToken: String?,
         roaRand: String?,
+        refreshToken: String?,
         selectedDn: String?,
         appClientId: String,
     ) {
@@ -200,6 +221,7 @@ class SessionStore(context: Context) :
                 put("data_port", dataPort)
                 put("access_token", accessToken)
                 put("roa_rand", roaRand)
+                put("refresh_token", refreshToken)
                 put("selected_dn", selectedDn)
                 put("app_client_id", appClientId)
                 put("updated_at", System.currentTimeMillis())
@@ -213,7 +235,7 @@ class SessionStore(context: Context) :
 
     private companion object {
         const val DB_NAME = "fusionlite.db"
-        const val DB_VERSION = 1
+        const val DB_VERSION = 2
         const val TABLE = "session"
     }
 }

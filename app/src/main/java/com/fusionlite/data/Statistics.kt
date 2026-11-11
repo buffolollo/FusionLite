@@ -218,6 +218,27 @@ fun energyBalanceRequest(
     )
 }
 
+/** Flattens [StationRealKpiRequest] for the GET fallback (HTTP 405 hosts). */
+fun StationRealKpiRequest.asQueryParams(): Map<String, String> = mapOf(
+    "stationDn" to stationDn,
+    "queryTime" to queryTime.toString(),
+    "timeZone" to timeZone,
+)
+
+/**
+ * Same fields as [energyBalanceRequest], flattened for the GET fallback used
+ * when a regional gateway answers the POST form with HTTP 405.
+ */
+fun EnergyBalanceRequest.asQueryParams(): Map<String, String> = mapOf(
+    "stationDn" to stationDn,
+    "timeDim" to timeDim,
+    "dateStr" to dateStr,
+    "queryTime" to queryTime.toString(),
+    "timeZone" to timeZone,
+    "timeZoneStr" to timeZoneStr,
+    "_" to timestamp.toString(),
+)
+
 /**
  * `ChartModeKpiHeaderViewModel.querySingleRealKpi` request body:
  * stationDn, queryTime (midnight today), timeZone.

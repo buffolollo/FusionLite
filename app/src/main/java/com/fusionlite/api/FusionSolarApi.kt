@@ -18,6 +18,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
+import retrofit2.http.QueryMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -70,7 +71,11 @@ object FusionSolarConfig {
 @JsonClass(generateAdapter = true)
 data class LoginRequest(
     val userName: String,
-    val value: String,                      // password (grantType=password) or verify code
+    // Password (grantType=password) or verify code. Null for the refresh-token
+    // request: the shipped app omits `value` entirely and sends
+    // {grantType:"refreshtoken", orgName, userName, appClientId, refreshToken}
+    // (SessionOutInterceptor.buildAutoLoginRequestBody).
+    val value: String? = null,
     val grantType: String = "password",
     val appClientId: String = "",
     val isNeedTwoVerify: Boolean = false,
@@ -79,6 +84,21 @@ data class LoginRequest(
     val refreshToken: String? = null,
     val isRenew: Boolean = false,
     val orgName: String? = null,
+)
+
+/**
+ * Body of a refresh-token login, exactly as built by
+ * `SessionOutInterceptor.buildAutoLoginRequestBody`:
+ * {grantType:"refreshtoken", orgName:"default", userName, appClientId,
+ * refreshToken}. No password/verifyCode fields are sent.
+ */
+@JsonClass(generateAdapter = true)
+data class RefreshTokenRequest(
+    val grantType: String = "refreshtoken",
+    val orgName: String = "default",
+    val userName: String,
+    val appClientId: String,
+    val refreshToken: String,
 )
 
 @JsonClass(generateAdapter = true)
@@ -317,6 +337,9 @@ interface FusionSolarApi {
     @POST(FusionSolarConfig.PATH_LOGIN)
     suspend fun login(@Body body: LoginRequest): LoginResponse
 
+    @POST(FusionSolarConfig.PATH_LOGIN)
+    suspend fun refreshToken(@Body body: RefreshTokenRequest): LoginResponse
+
     @POST(FusionSolarConfig.PATH_STATION_LIST)
     suspend fun stationList(@Body body: StationListArg): Envelope<PageData>
 
@@ -351,11 +374,22 @@ interface FusionSolarApi {
     @POST(FusionSolarConfig.PATH_STATION_REAL_KPI)
     suspend fun stationRealKpi(@Body body: StationRealKpiRequest): Envelope<StationRealKpi>
 
+    @GET(FusionSolarConfig.PATH_STATION_REAL_KPI)
+    suspend fun stationRealKpiGet(@QueryMap params: Map<String, String>): Envelope<StationRealKpi>
+
     @POST(FusionSolarConfig.PATH_ENERGY_BALANCE)
     suspend fun energyBalance(@Body body: EnergyBalanceRequest): Envelope<EnergyBalanceData>
 
     @POST(FusionSolarConfig.PATH_ENERGY_BALANCE_V2)
     suspend fun energyBalanceV2(@Body body: EnergyBalanceRequest): Envelope<EnergyBalanceData>
+
+    // Method fallbacks for regional hosts whose gateway rejects the POST form
+    // with HTTP 405. The same request fields are sent as query parameters.
+    @GET(FusionSolarConfig.PATH_ENERGY_BALANCE)
+    suspend fun energyBalanceGet(@QueryMap params: Map<String, String>): Envelope<EnergyBalanceData>
+
+    @GET(FusionSolarConfig.PATH_ENERGY_BALANCE_V2)
+    suspend fun energyBalanceV2Get(@QueryMap params: Map<String, String>): Envelope<EnergyBalanceData>
 
     @POST(FusionSolarConfig.PATH_KPI_CHART)
     suspend fun kpiChart(@Body body: KpiChartRequest): Envelope<KpiChartData>
@@ -369,6 +403,12 @@ data class Session(
     val port: String,
     val accessToken: String,
     val roaRand: String,
+    /**
+     * Long-lived renewal token from LoginData. The shipped app re-authenticates
+     * with grantType="refreshtoken" instead of asking for the password again
+     * (SessionOutInterceptor.buildAutoLoginRequestBody).
+     */
+    val refreshToken: String? = null,
 ) {
     val baseUrl: String get() = "https://$host:$port"
     val cookie: String
@@ -463,14 +503,27 @@ object ApiFactory {
             allowed || javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
         }
 
-    fun create(context: android.content.Context?, session: Session?): FusionSolarApi {
+    fun create(
+        context: android.content.Context?,
+        session: Session?,
+        baseUrl: String? = null,
+    ): FusionSolarApi {
         val builder = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
+            // The API signals an expired session with a 302 to
+            // /unisess/v1/logout or /unisess/v1/auth (SessionOutInterceptor.isMove).
+            // Following it lands on an HTML login page, which then fails to parse
+            // as JSON and looked like a random network error. Keep the redirect
+            // visible so the data layer can renew the token instead.
+            .followRedirects(false)
+            .followSslRedirects(false)
+        val verifierHost = session?.host
+            ?: baseUrl?.substringAfter("://")?.substringBefore('/')?.substringBefore(':')
         if (context != null) {
             huaweiTrust(context)?.let { (ssl, tm) ->
                 builder.sslSocketFactory(ssl.socketFactory, tm)
-                builder.hostnameVerifier(hostVerifier(session?.host))
+                builder.hostnameVerifier(hostVerifier(verifierHost))
             }
         }
         if (session?.accessToken?.isNotEmpty() == true) {
@@ -485,8 +538,11 @@ object ApiFactory {
                 )
             }
         }
+        val root = baseUrl
+            ?: session?.baseUrl
+            ?: "https://${FusionSolarConfig.DEFAULT_HOST}:${FusionSolarConfig.DEFAULT_PORT}"
         return Retrofit.Builder()
-            .baseUrl("${session?.baseUrl ?: "https://${FusionSolarConfig.DEFAULT_HOST}:${FusionSolarConfig.DEFAULT_PORT}"}/")
+            .baseUrl("${root.trimEnd('/')}/")
             .client(builder.build())
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()

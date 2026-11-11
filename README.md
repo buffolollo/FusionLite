@@ -33,6 +33,20 @@ Default server (`assets/app_config.properties`): `intl.fusionsolar.huawei.com:32
 Response `BaseEntityBo<LoginBo>` → `data.accessToken`, `data.refreshToken`,
 `data.roaRand` (CSRF), `data.regionList` (regional server IPs).
 
+### Silent renewal (shipped mechanism)
+
+`SessionOutInterceptor` does **not** use the password to recover. An expired
+session is signalled by a `302` whose `Location` contains `/unisess/v1/logout`
+or `/unisess/v1/auth` (or a `401/403`). The app then posts
+`{grantType:"refreshtoken", orgName:"default", userName, appClientId,
+refreshToken}` to the **current data host** + `URL_LOGIN` and replaces
+`accessToken`/`roaRand` (and `refreshToken` when a new one is issued).
+
+FusionLite follows the same order (`data/FusionRepository.renewWithRefreshToken`
+→ password login as fallback), and keeps the `302` visible by disabling OkHttp
+redirects so it is classified as auth-expired instead of becoming an HTML/JSON
+parse error. Both tokens are persisted; only explicit sign-out clears them.
+
 ### Session headers (`NetConfigConstant.getHeaders` + `iph`)
 ```
 Cookie: locale=<lang>;data-theme=<light|dark>;bspsession=<accessToken>;dp-session=<accessToken>
@@ -82,6 +96,11 @@ Filters reuse the shipped app's `StationKpiChartArgBean.StatDim` dex codes:
   year, mirroring `PhotovoltaicStatisticsViewModel.updateSelectValue`; the
   exact server bucketing for ALL is inferred (no runtime capture) — the
   breakdown/total cards remain correct because they prefer the server totals.
+- Some regional gateways answer the POST form with **HTTP 405**. FusionLite
+  retries the same fields as a `GET` query against v1 and v2, and reports every
+  attempt (`v1 POST: …; v2 POST: HTTP 405 (Allow: GET); …`) instead of only the
+  last version's error. `station-real-kpi` gets the same POST→GET fallback (and
+  the working transport is remembered).
 
 ## Local persistence
 
@@ -97,6 +116,15 @@ The dashboard is an animated solar scene: the PV array shimmer and the number of
 energy particles scale with live production, while `EnergyFlowDiagram` shows PV →
 home/battery/grid routing. Auto-refresh runs every 15/30/60 s (selectable), on app
 resume, and on manual pull of the refresh glyph.
+
+The Analytics production curve has an expand glyph (Curve mode) that opens a
+full-screen landscape chart (`FullscreenChartScreen`): system bars hidden, chart
+filling the display, CLOSE or Back restores portrait/unspecified orientation.
+
+Rotation no longer resets navigation: `MainActivity` declares
+`orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden` as
+handled configuration changes, so Compose keeps `UiState` (including the
+current tab) instead of recreating the activity.
 
 A liquid bottom navigation bar (`ui/LiquidNavBar.kt`) now floats over the shell
 with three destinations: Home, Analytics and Account. Its selected pill is a
