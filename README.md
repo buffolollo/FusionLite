@@ -112,9 +112,10 @@ key so an expired token can be renewed silently. Only an explicit sign-out clear
 
 ## UI / refresh
 
-The dashboard is an animated solar scene: the PV array shimmer and the number of
-energy particles scale with live production, while `EnergyFlowDiagram` shows PV →
-home/battery/grid routing. Auto-refresh runs every 15/30/60 s (selectable), on app
+The dashboard is an animated solar scene: panel shimmer, particle count and the
+overall tempo (sun rays, specular sweep, panel→house flow) scale with live
+production — from a slow idle at zero output up to ~2x speed at full capacity —
+while `EnergyFlowDiagram` shows PV → home/battery/grid routing. Auto-refresh runs every 15/30/60 s (selectable), on app
 resume, and on manual pull of the refresh glyph.
 
 The Analytics production curve has an expand glyph (Curve mode) that opens a

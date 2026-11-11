@@ -1,7 +1,6 @@
 package com.fusionlite.ui
 
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -21,8 +20,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -67,26 +71,37 @@ fun SolarPanelScene(
     modifier: Modifier = Modifier,
     showHouse: Boolean = true,
 ) {
-    val transitions = rememberInfiniteTransition(label = "solar-scene")
-    val sweep by transitions.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing)),
-        label = "sweep",
-    )
-    val pulse by transitions.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(tween(5200, easing = LinearEasing)),
-        label = "pulse",
-    )
-    val flow by transitions.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
-        label = "flow",
-    )
-    val fraction = powerFraction.coerceIn(0.02f, 1f)
+    val energy = powerFraction.coerceIn(0f, 1f)
+    val fraction = max(energy, 0.02f)
+
+    // Real-time production drives the scene tempo: ~0.35x at night/zero output
+    // up to 2x at full capacity. The phases are integrated with
+    // withFrameNanos instead of fixed infinite tweens so a refresh changing
+    // power (every 15-60 s) changes the speed without snapping the animation.
+    val speed = 0.35f + 1.65f * energy
+    val currentSpeed = rememberUpdatedState(speed)
+
+    var sweep by remember { mutableFloatStateOf(0f) }
+    var pulse by remember { mutableFloatStateOf(0f) }
+    var flow by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        val cycle = (2 * PI).toFloat()
+        var lastFrame = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (lastFrame != 0L) {
+                    // Clamp after a pause/background jump so the phase does not leap.
+                    val dt = ((now - lastFrame) / 1_000_000_000.0).toFloat().coerceIn(0f, 0.05f)
+                    val k = currentSpeed.value
+                    sweep = (sweep + dt / 4.2f * k) % 1f
+                    pulse = (pulse + dt / 5.2f * k * cycle) % cycle
+                    flow = (flow + dt / 2.6f * k) % 1f
+                }
+                lastFrame = now
+            }
+        }
+    }
 
     Canvas(modifier) {
         drawRect(
