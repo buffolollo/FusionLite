@@ -1,7 +1,10 @@
 package com.fusionlite.ui
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -10,12 +13,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -38,6 +47,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -45,7 +55,6 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fusionlite.data.FlowAllocation
@@ -54,11 +63,10 @@ import com.fusionlite.data.GridDirection
 import com.fusionlite.data.allocation
 import com.fusionlite.data.clean
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
 
 /**
  * Animated hero artwork: a sun, a tilted PV array and current pulses flowing
@@ -379,20 +387,25 @@ private fun DrawScope.drawParticles(path: Path, progress: Float, count: Int, col
     }
 }
 
-/** A directed energy connection between two nodes. */
-private data class QuadLink(
-    val from: Offset,
-    val to: Offset,
-    val control: Offset,
+
+private enum class FlowIcon { SUN, HOME, GRID, BATTERY }
+
+/** One active connection, already oriented from source to destination. */
+private data class FlowEdge(
+    val start: Offset,
+    val end: Offset,
     val power: Double,
     val color: Color,
-    val labelT: Float = 0.5f,
 )
 
 /**
- * Diamond topology (solar top, battery right, home bottom, grid left) so every
- * connection has a clear direction. Active links animate particles from source
- * to destination, carry an arrow head and show the kW travelling on that edge.
+ * Hub-and-spoke energy flow.
+ *
+ * All four nodes connect to a central inverter hub, which is how a real PV
+ * system is wired: every kilowatt (PV, grid, battery) passes through the hub
+ * before reaching the house. Straight spokes mean **no crossing lines**, and
+ * each node carries its own value, so the diagram stays readable at a glance.
+ * Active spokes animate particles in the actual direction of travel.
  */
 @Composable
 fun EnergyFlowDiagram(
@@ -400,256 +413,522 @@ fun EnergyFlowDiagram(
     modifier: Modifier = Modifier,
     allocation: FlowAllocation? = metrics?.allocation(),
 ) {
-    val infinite = rememberInfiniteTransition(label = "flow-diagram")
-    val progress by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
-        label = "particles",
-    )
-    val labelPaint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG) }
-    val labelBackground = MaterialTheme.colorScheme.surface
-    val labelText = MaterialTheme.colorScheme.onSurface
-    val skeletonColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val palette = LocalFusionPalette.current
+    val outline = MaterialTheme.colorScheme.outline
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val textPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
 
-    BoxWithConstraints(modifier) {
-        Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val pv = Offset(w * 0.50f, h * 0.31f)
-            val battery = Offset(w * 0.72f, h * 0.50f)
-            val home = Offset(w * 0.50f, h * 0.69f)
-            val grid = Offset(w * 0.28f, h * 0.50f)
+    val alloc = allocation
+    val pv = metrics?.pv ?: 0.0
+    val load = metrics?.load ?: 0.0
+    val gridImport = alloc?.gridImport ?: 0.0
+    val gridExport = alloc?.gridExport ?: 0.0
+    val charge = alloc?.batteryCharge ?: 0.0
+    val discharge = alloc?.batteryDischarge ?: 0.0
+    val soc = metrics?.soc
+    val hasBattery = metrics?.battery != null || soc != null
 
-            val pvHome = Offset(w * 0.30f, h * 0.53f)
-            val pvBatt = Offset(w * 0.80f, h * 0.28f)
-            val pvGrid = Offset(w * 0.20f, h * 0.28f)
-            val gridHome = Offset(w * 0.20f, h * 0.76f)
-            val battHome = Offset(w * 0.80f, h * 0.76f)
-            val battGrid = Offset(w * 0.50f, h * 1.02f)
-            val gridBatt = Offset(w * 0.50f, h * -0.02f)
-
-            // Faint topology so the system structure is always readable.
-            val skeleton = PathEffect.dashPathEffect(floatArrayOf(7f, 9f))
-            fun skeletonLink(a: Offset, c: Offset, b: Offset) {
-                drawPath(
-                    quadPath(a, c, b),
-                    color = skeletonColor.copy(alpha = 0.16f),
-                    style = Stroke(width = 1.2f, pathEffect = skeleton),
-                )
-            }
-            skeletonLink(pv, pvHome, home)
-            skeletonLink(pv, pvBatt, battery)
-            skeletonLink(pv, pvGrid, grid)
-            skeletonLink(grid, gridHome, home)
-            skeletonLink(battery, battHome, home)
-
-            val links = mutableListOf<QuadLink>()
-            val alloc = allocation
-            if (alloc != null) {
-                fun add(from: Offset, to: Offset, control: Offset, power: Double, color: Color) {
-                    if (power > 0.02) links += QuadLink(from, to, control, power, color)
+    // One clock drives every particle so the flows stay in sync and the speed
+    // can follow live power without snapping (same trick as SolarPanelScene).
+    var phase by remember { mutableFloatStateOf(0f) }
+    val activity = (pv + discharge + gridImport).coerceIn(0.0, 8.0)
+    val activityState = rememberUpdatedState(activity)
+    LaunchedEffect(Unit) {
+        var lastFrame = 0L
+        while (true) {
+            withFrameNanos { now ->
+                if (lastFrame != 0L) {
+                    val dt = ((now - lastFrame) / 1_000_000_000.0).toFloat().coerceIn(0f, 0.05f)
+                    val speed = 0.08f + 0.16f * (activityState.value / 6.0).toFloat().coerceIn(0f, 1f)
+                    phase = (phase + dt * speed) % 1f
                 }
-                add(pv, home, pvHome, alloc.pvToHome, SolarGold)
-                add(pv, battery, pvBatt, alloc.pvToBattery, SolarCyan)
-                add(pv, grid, pvGrid, alloc.pvToGrid, SolarGold)
-                add(grid, home, gridHome, alloc.gridToHome, SolarAmber)
-                add(battery, home, battHome, alloc.batteryToHome, SolarGreen)
-                add(battery, grid, battGrid, alloc.batteryToGrid, SolarGreen)
-                add(grid, battery, gridBatt, alloc.gridToBattery, SolarAmber)
-            }
-
-            links.forEach { link ->
-                val path = quadPath(link.from, link.control, link.to)
-                drawPath(
-                    path,
-                    color = link.color.copy(alpha = 0.12f),
-                    style = Stroke(width = 9f, cap = StrokeCap.Round),
-                )
-                drawPath(
-                    path,
-                    color = link.color.copy(alpha = 0.72f),
-                    style = Stroke(width = 2.5f, cap = StrokeCap.Round),
-                )
-                drawParticles(path, progress, count = 3 + (link.power.coerceAtMost(6.0) * 0.8).toInt(), color = link.color)
-                drawArrowHead(
-                    point = quadPoint(link.from, link.control, link.to, 0.64f),
-                    tangent = quadTangent(link.from, link.control, link.to, 0.64f),
-                    color = link.color,
-                )
-                drawFlowLabel(
-                    text = "${link.power.clean(1)} kW",
-                    point = quadPoint(link.from, link.control, link.to, link.labelT),
-                    paint = labelPaint,
-                    background = labelBackground,
-                    foreground = labelText,
-                    accent = link.color,
-                )
-            }
-
-            listOf(
-                pv to SolarGold,
-                battery to SolarGreen,
-                home to SolarCyan,
-                grid to SolarBlue,
-            ).forEach { (center, color) ->
-                drawCircle(color.copy(alpha = 0.10f), radius = 18f, center = center)
-                drawCircle(color.copy(alpha = 0.65f), radius = 3.5f, center = center)
+                lastFrame = now
             }
         }
+    }
 
-        val alloc = allocation
-        val gridDirection = alloc?.gridDirection ?: GridDirection.IDLE
-        val gridValue = when (gridDirection) {
-            GridDirection.IMPORT -> alloc?.gridImport
-            GridDirection.EXPORT -> alloc?.gridExport
-            GridDirection.IDLE -> metrics?.grid?.let { abs(it) }
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        if (w <= 0f || h <= 0f) return@Canvas
+
+        val cardW = min(w * 0.30f, 96.dp.toPx())
+        val cardH = min(54.dp.toPx(), h * 0.22f)
+        val margin = 2.dp.toPx()
+        val hubR = min(24.dp.toPx(), w * 0.08f)
+        val hub = Offset(w / 2f, h / 2f)
+
+        val pvC = Offset(w / 2f, margin + cardH / 2f)
+        val homeC = Offset(w / 2f, h - margin - cardH / 2f)
+        val gridC = Offset(margin + cardW / 2f, h / 2f)
+        val battC = Offset(w - margin - cardW / 2f, h / 2f)
+
+        val pvAnchor = Offset(pvC.x, pvC.y + cardH / 2f)
+        val homeAnchor = Offset(homeC.x, homeC.y - cardH / 2f)
+        val gridAnchor = Offset(gridC.x + cardW / 2f, gridC.y)
+        val battAnchor = Offset(battC.x - cardW / 2f, battC.y)
+        val hubTop = Offset(hub.x, hub.y - hubR)
+        val hubBottom = Offset(hub.x, hub.y + hubR)
+        val hubLeft = Offset(hub.x - hubR, hub.y)
+        val hubRight = Offset(hub.x + hubR, hub.y)
+
+        // Faint topology, always visible even at night.
+        val dash = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 5.dp.toPx()))
+        listOf(
+            pvAnchor to hubTop,
+            homeAnchor to hubBottom,
+            gridAnchor to hubLeft,
+            battAnchor to hubRight,
+        ).forEach { (a, b) ->
+            drawLine(
+                color = outline.copy(alpha = 0.30f),
+                start = a,
+                end = b,
+                strokeWidth = 1.1.dp.toPx(),
+                pathEffect = dash,
+            )
         }
-        val gridAccent = when (gridDirection) {
-            GridDirection.IMPORT -> SolarAmber
-            GridDirection.EXPORT -> SolarGreen
-            GridDirection.IDLE -> SolarBlue
+
+        val edges = buildList {
+            if (pv > 0.02) add(FlowEdge(pvAnchor, hubTop, pv, palette.gold))
+            if (load > 0.02) add(FlowEdge(hubBottom, homeAnchor, load, palette.cyan))
+            if (gridImport > 0.02) {
+                add(FlowEdge(gridAnchor, hubLeft, gridImport, palette.amber))
+            } else if (gridExport > 0.02) {
+                add(FlowEdge(hubLeft, gridAnchor, gridExport, palette.green))
+            }
+            if (hasBattery) {
+                if (charge > 0.02) {
+                    add(FlowEdge(hubRight, battAnchor, charge, palette.green))
+                } else if (discharge > 0.02) {
+                    add(FlowEdge(battAnchor, hubRight, discharge, palette.green))
+                }
+            }
         }
-        val gridState = when (gridDirection) {
-            GridDirection.IMPORT -> "importing"
-            GridDirection.EXPORT -> "exporting"
-            GridDirection.IDLE -> "idle"
+        edges.forEach { edge ->
+            drawLine(
+                color = edge.color.copy(alpha = 0.16f),
+                start = edge.start,
+                end = edge.end,
+                strokeWidth = 9.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = edge.color.copy(alpha = 0.82f),
+                start = edge.start,
+                end = edge.end,
+                strokeWidth = 2.2.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawEdgeParticles(edge, phase)
+            drawEdgeArrow(edge)
+        }
+
+        drawHub(hub, hubR, phase, palette, activity > 0.02)
+
+        val pvValue = if (metrics?.pv == null) "—" else "${pv.clean(1)} kW"
+        val loadValue = if (metrics?.load == null) "—" else "${load.clean(1)} kW"
+        val gridValue =
+            if (metrics?.grid == null) "—" else "${max(gridImport, gridExport).clean(1)} kW"
+        val batteryValue = if (!hasBattery) "—" else "${max(charge, discharge).clean(1)} kW"
+        val gridState = when {
+            gridImport > 0.02 -> "importing"
+            gridExport > 0.02 -> "exporting"
+            metrics?.grid == null -> "no meter"
+            else -> "idle"
+        }
+        val gridColor = when {
+            gridImport > 0.02 -> palette.amber
+            gridExport > 0.02 -> palette.green
+            else -> palette.blue
         }
         val batteryState = when {
-            (alloc?.batteryCharge ?: 0.0) > 0.05 -> "charging"
-            (alloc?.batteryDischarge ?: 0.0) > 0.05 -> "supplying"
+            !hasBattery -> "no battery"
+            charge > 0.02 -> "charging"
+            discharge > 0.02 -> "supplying"
             else -> "idle"
         }
 
-        FlowNodeChip(
-            "☀", "Solar", metrics?.pv, "kW", SolarGold, "producing",
-            Modifier.align(Alignment.TopCenter),
+        drawFlowCard(
+            pvC, cardW, cardH, palette.gold, FlowIcon.SUN, "Solar",
+            pvValue, if (pv > 0.02) "producing" else "idle",
+            pv > 0.02, palette, muted, textPaint,
         )
-        FlowNodeChip(
-            "🔋", "Battery", metrics?.soc, "%", SolarGreen, batteryState,
-            Modifier.align(Alignment.CenterEnd),
+        drawFlowCard(
+            homeC, cardW, cardH, palette.cyan, FlowIcon.HOME, "Home",
+            loadValue, if (load > 0.02) "consuming" else "idle",
+            load > 0.02, palette, muted, textPaint,
         )
-        FlowNodeChip(
-            "🏠", "Home", metrics?.load, "kW", SolarCyan, "consuming",
-            Modifier.align(Alignment.BottomCenter),
+        drawFlowCard(
+            gridC, cardW, cardH, gridColor, FlowIcon.GRID, "Grid",
+            gridValue, gridState,
+            max(gridImport, gridExport) > 0.02, palette, muted, textPaint,
         )
-        FlowNodeChip(
-            "⚡", "Grid", gridValue, "kW", gridAccent, gridState,
-            Modifier.align(Alignment.CenterStart),
+        drawFlowCard(
+            battC, cardW, cardH, palette.green, FlowIcon.BATTERY, "Battery",
+            batteryValue, batteryState,
+            charge > 0.02 || discharge > 0.02, palette, muted, textPaint,
         )
     }
 }
 
-private fun quadPath(a: Offset, c: Offset, b: Offset): Path = Path().apply {
-    moveTo(a.x, a.y)
-    quadraticTo(c.x, c.y, b.x, b.y)
+private fun DrawScope.drawEdgeParticles(edge: FlowEdge, phase: Float) {
+    val delta = edge.end - edge.start
+    val length = delta.getDistance()
+    if (length <= 1f) return
+    val count = (2 + (edge.power.coerceIn(0.0, 6.0) * 0.6).toInt()).coerceIn(2, 5)
+    repeat(count) { index ->
+        val fraction = (phase + index.toFloat() / count) % 1f
+        val position = edge.start + delta * fraction
+        val fade = sin(fraction * PI).toFloat()
+        drawCircle(
+            color = edge.color.copy(alpha = 0.20f + 0.70f * fade),
+            radius = 1.3.dp.toPx() + 1.4.dp.toPx() * fade,
+            center = position,
+        )
+    }
 }
 
-private fun quadPoint(a: Offset, c: Offset, b: Offset, t: Float): Offset {
-    val u = 1f - t
-    return Offset(
-        u * u * a.x + 2f * u * t * c.x + t * t * b.x,
-        u * u * a.y + 2f * u * t * c.y + t * t * b.y,
-    )
-}
-
-private fun quadTangent(a: Offset, c: Offset, b: Offset, t: Float): Offset {
-    val x = 2f * (1f - t) * (c.x - a.x) + 2f * t * (b.x - c.x)
-    val y = 2f * (1f - t) * (c.y - a.y) + 2f * t * (b.y - c.y)
-    val length = sqrt(x * x + y * y).coerceAtLeast(0.0001f)
-    return Offset(x / length, y / length)
-}
-
-private fun DrawScope.drawArrowHead(point: Offset, tangent: Offset, color: Color) {
-    val size = 7f
-    val normal = Offset(-tangent.y, tangent.x)
-    val tip = Offset(point.x + tangent.x * size, point.y + tangent.y * size)
-    val base = Offset(point.x - tangent.x * size * 0.5f, point.y - tangent.y * size * 0.5f)
+private fun DrawScope.drawEdgeArrow(edge: FlowEdge) {
+    val delta = edge.end - edge.start
+    val length = delta.getDistance()
+    if (length <= 1f) return
+    val direction = delta / length
+    val normal = Offset(-direction.y, direction.x)
+    val arrow = 4.5.dp.toPx()
+    val tip = edge.end - direction * 2.dp.toPx()
+    val base = tip - direction * arrow
     val path = Path().apply {
         moveTo(tip.x, tip.y)
-        lineTo(base.x + normal.x * size * 0.8f, base.y + normal.y * size * 0.8f)
-        lineTo(base.x - normal.x * size * 0.8f, base.y - normal.y * size * 0.8f)
+        lineTo(base.x + normal.x * arrow * 0.62f, base.y + normal.y * arrow * 0.62f)
+        lineTo(base.x - normal.x * arrow * 0.62f, base.y - normal.y * arrow * 0.62f)
         close()
     }
-    drawPath(path, color)
+    drawPath(path, edge.color.copy(alpha = 0.95f))
 }
 
-private fun DrawScope.drawFlowLabel(
-    text: String,
-    point: Offset,
-    paint: android.graphics.Paint,
-    background: Color,
-    foreground: Color,
-    accent: Color,
+private fun DrawScope.drawHub(
+    center: Offset,
+    radius: Float,
+    phase: Float,
+    palette: FusionPalette,
+    active: Boolean,
 ) {
-    paint.textSize = 10.sp.toPx()
-    paint.textAlign = android.graphics.Paint.Align.CENTER
-    paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
-    paint.color = foreground.toArgb()
-    val padH = 6.dp.toPx()
-    val padV = 3.dp.toPx()
-    val width = paint.measureText(text) + padH * 2
-    val height = paint.textSize + padV * 2
-    val topLeft = Offset(point.x - width / 2, point.y - height / 2)
-    drawRoundRect(
-        color = background.copy(alpha = 0.95f),
-        topLeft = topLeft,
-        size = Size(width, height),
-        cornerRadius = CornerRadius(height / 2),
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                palette.gold.copy(alpha = if (active) 0.20f else 0.08f),
+                palette.gold.copy(alpha = 0f),
+            ),
+            center = center,
+            radius = radius * 2.0f,
+        ),
+        radius = radius * 2.0f,
+        center = center,
     )
-    drawRoundRect(
-        color = accent.copy(alpha = 0.55f),
-        topLeft = topLeft,
-        size = Size(width, height),
-        cornerRadius = CornerRadius(height / 2),
-        style = Stroke(width = 1f),
+    rotate(degrees = phase * 360f, pivot = center) {
+        drawCircle(
+            brush = Brush.sweepGradient(
+                colors = listOf(palette.gold, palette.green, palette.cyan, palette.gold),
+                center = center,
+            ),
+            radius = radius,
+            center = center,
+            style = Stroke(width = 2.dp.toPx()),
+            alpha = if (active) 0.95f else 0.45f,
+        )
+    }
+    drawCircle(palette.surfaceHigh, radius = radius * 0.86f, center = center)
+    drawCircle(
+        palette.gold.copy(alpha = if (active) 0.16f else 0.05f),
+        radius = radius * 0.86f,
+        center = center,
     )
-    drawContext.canvas.nativeCanvas.drawText(
-        text,
-        point.x,
-        point.y - (paint.ascent() + paint.descent()) / 2f,
-        paint,
-    )
+
+    val s = radius * 0.48f
+    val bolt = Path().apply {
+        moveTo(center.x + s * 0.10f, center.y - s)
+        lineTo(center.x - s * 0.55f, center.y + s * 0.12f)
+        lineTo(center.x - s * 0.08f, center.y + s * 0.12f)
+        lineTo(center.x - s * 0.18f, center.y + s)
+        lineTo(center.x + s * 0.55f, center.y - s * 0.14f)
+        lineTo(center.x + s * 0.08f, center.y - s * 0.14f)
+        close()
+    }
+    drawPath(bolt, palette.gold.copy(alpha = if (active) 1f else 0.55f))
+
+    repeat(3) { index ->
+        val angle = (phase * 2f * PI + index * 2f * PI / 3f).toFloat()
+        val dot = Offset(
+            center.x + cos(angle) * radius * 1.30f,
+            center.y + sin(angle) * radius * 1.30f,
+        )
+        drawCircle(palette.gold.copy(alpha = 0.40f), radius = 1.5.dp.toPx(), center = dot)
+    }
 }
 
-@Composable
-private fun FlowNodeChip(
-    icon: String,
+private fun DrawScope.drawFlowCard(
+    center: Offset,
+    w: Float,
+    h: Float,
+    accent: Color,
+    icon: FlowIcon,
     label: String,
-    value: Double?,
-    unit: String,
-    accent: Color,
+    value: String,
     state: String,
-    modifier: Modifier = Modifier,
+    active: Boolean,
+    palette: FusionPalette,
+    muted: Color,
+    paint: Paint,
 ) {
-    Column(
-        modifier = modifier
-            .widthIn(min = 86.dp)
-            .background(LocalFusionPalette.current.surfaceHigh.copy(alpha = 0.94f), RoundedCornerShape(16.dp))
-            .border(1.dp, accent.copy(alpha = 0.40f), RoundedCornerShape(16.dp))
-            .padding(horizontal = 12.dp, vertical = 7.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(icon, fontSize = 14.sp, textAlign = TextAlign.Center)
-            Text(
-                " $label",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 0.8.sp,
+    val left = center.x - w / 2f
+    val top = center.y - h / 2f
+    val corner = 14.dp.toPx()
+    drawRoundRect(
+        color = palette.surfaceHigh.copy(alpha = if (active) 1f else 0.72f),
+        topLeft = Offset(left, top),
+        size = Size(w, h),
+        cornerRadius = CornerRadius(corner),
+    )
+    drawRoundRect(
+        color = accent.copy(alpha = if (active) 0.55f else 0.22f),
+        topLeft = Offset(left, top),
+        size = Size(w, h),
+        cornerRadius = CornerRadius(corner),
+        style = Stroke(width = 1.dp.toPx()),
+    )
+    drawFlowIcon(
+        icon = icon,
+        center = Offset(left + 16.dp.toPx(), center.y),
+        radius = 7.dp.toPx(),
+        color = accent.copy(alpha = if (active) 0.95f else 0.50f),
+    )
+    val textX = left + 31.dp.toPx()
+    drawTextLine(paint, label.uppercase(), textX, center.y - 9.dp.toPx(), 8f, muted, true)
+    drawTextLine(paint, value, textX, center.y + 5.dp.toPx(), 14f, accent, true)
+    drawTextLine(paint, state, textX, center.y + 17.dp.toPx(), 8f, muted, false)
+}
+
+private fun DrawScope.drawTextLine(
+    paint: Paint,
+    text: String,
+    x: Float,
+    baselineY: Float,
+    sizeSp: Float,
+    color: Color,
+    bold: Boolean,
+) {
+    paint.textSize = sizeSp.sp.toPx()
+    paint.color = color.toArgb()
+    paint.typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+    paint.textAlign = Paint.Align.LEFT
+    drawContext.canvas.nativeCanvas.drawText(text, x, baselineY, paint)
+}
+
+private fun DrawScope.drawFlowIcon(icon: FlowIcon, center: Offset, radius: Float, color: Color) {
+    when (icon) {
+        FlowIcon.SUN -> {
+            drawCircle(color, radius = radius * 0.38f, center = center)
+            repeat(8) { index ->
+                val angle = index * (PI / 4)
+                val dx = cos(angle).toFloat()
+                val dy = sin(angle).toFloat()
+                drawLine(
+                    color = color,
+                    start = Offset(center.x + dx * radius * 0.62f, center.y + dy * radius * 0.62f),
+                    end = Offset(center.x + dx * radius, center.y + dy * radius),
+                    strokeWidth = 1.2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+
+        FlowIcon.HOME -> {
+            val roof = Path().apply {
+                moveTo(center.x - radius, center.y)
+                lineTo(center.x, center.y - radius * 0.85f)
+                lineTo(center.x + radius, center.y)
+            }
+            drawPath(
+                roof,
+                color,
+                style = Stroke(
+                    width = 1.4.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round,
+                ),
+            )
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(center.x - radius * 0.62f, center.y + radius * 0.02f),
+                size = Size(radius * 1.24f, radius * 0.9f),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+                style = Stroke(width = 1.4.dp.toPx()),
+            )
+            drawRect(
+                color = color.copy(alpha = 0.65f),
+                topLeft = Offset(center.x - radius * 0.16f, center.y + radius * 0.38f),
+                size = Size(radius * 0.32f, radius * 0.54f),
             )
         }
-        Text(
-            text = value?.let { "${it.clean()} $unit" } ?: "—",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = accent,
+
+        FlowIcon.GRID -> {
+            val stroke = 1.3.dp.toPx()
+            drawLine(
+                color,
+                Offset(center.x - radius * 0.62f, center.y + radius),
+                Offset(center.x - radius * 0.20f, center.y - radius),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color,
+                Offset(center.x + radius * 0.62f, center.y + radius),
+                Offset(center.x + radius * 0.20f, center.y - radius),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+            listOf(0.26f, -0.14f, -0.54f).forEach { level ->
+                drawLine(
+                    color.copy(alpha = 0.8f),
+                    Offset(center.x - radius * 0.72f, center.y + radius * level),
+                    Offset(center.x + radius * 0.72f, center.y + radius * level),
+                    strokeWidth = stroke,
+                )
+            }
+            drawLine(
+                color,
+                Offset(center.x - radius * 0.28f, center.y - radius),
+                Offset(center.x + radius * 0.28f, center.y - radius),
+                strokeWidth = stroke,
+            )
+        }
+
+        FlowIcon.BATTERY -> {
+            val bodyWidth = radius * 1.5f
+            val bodyHeight = radius
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(center.x - bodyWidth / 2f, center.y - bodyHeight / 2f),
+                size = Size(bodyWidth, bodyHeight),
+                cornerRadius = CornerRadius(1.6.dp.toPx()),
+                style = Stroke(width = 1.4.dp.toPx()),
+            )
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(center.x + bodyWidth / 2f + 1.dp.toPx(), center.y - bodyHeight * 0.22f),
+                size = Size(2.dp.toPx(), bodyHeight * 0.44f),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+            )
+            drawRoundRect(
+                color = color.copy(alpha = 0.55f),
+                topLeft = Offset(center.x - bodyWidth / 2f + 2.dp.toPx(), center.y - bodyHeight / 2f + 2.dp.toPx()),
+                size = Size(bodyWidth * 0.42f, bodyHeight - 4.dp.toPx()),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+            )
+        }
+    }
+}
+
+/**
+ * Destination (or source) breakdown under the diagram.
+ *
+ * While the sun is up it answers "where does the solar go?"; at night it
+ * flips to "where does the house energy come from?". Three segments with
+ * matching legends make the split readable without a table.
+ */
+@Composable
+fun FlowAllocationBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
+    val palette = LocalFusionPalette.current
+    val alloc = allocation ?: return
+    val pv = metrics.pv ?: 0.0
+    val solarMode = pv > 0.05
+    val items: List<Triple<String, Double, Color>> = if (solarMode) {
+        listOf(
+            Triple("Home", alloc.pvToHome, palette.cyan),
+            Triple("Battery", alloc.pvToBattery, palette.green),
+            Triple("Grid", alloc.pvToGrid, palette.blue),
         )
-        Text(
-            state,
-            fontSize = 9.sp,
-            color = accent.copy(alpha = 0.75f),
+    } else {
+        listOf(
+            Triple("Solar", alloc.pvToHome, palette.gold),
+            Triple("Battery", alloc.batteryToHome, palette.green),
+            Triple("Grid", alloc.gridToHome, palette.amber),
         )
+    }
+    val animated = items.map { item ->
+        animateFloatAsState(
+            targetValue = item.second.toFloat().coerceAtLeast(0f),
+            animationSpec = tween(650),
+            label = "alloc-${item.first}",
+        ).value
+    }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Column(Modifier.padding(top = 2.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                if (solarMode) "WHERE THE SOLAR GOES" else "WHERE THE HOME ENERGY COMES FROM",
+                fontSize = 9.sp,
+                letterSpacing = 1.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = muted,
+            )
+            Text(
+                if (solarMode) {
+                    "${((alloc.selfConsumption / pv) * 100).coerceIn(0.0, 100.0).toInt()}% self-used"
+                } else {
+                    "${(metrics.load ?: 0.0).clean(1)} kW load"
+                },
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = palette.gold,
+            )
+        }
+        Spacer(Modifier.height(7.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            items.forEachIndexed { index, item ->
+                val weight = animated[index]
+                if (weight > 0.0001f) {
+                    Box(Modifier.weight(weight).fillMaxHeight().background(item.third))
+                    if (index < items.lastIndex) {
+                        Spacer(
+                            Modifier
+                                .width(1.5.dp)
+                                .fillMaxHeight()
+                                .background(MaterialTheme.colorScheme.surface),
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.forEach { item ->
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(6.dp).background(item.third, CircleShape))
+                        Spacer(Modifier.width(4.dp))
+                        Text(item.first, fontSize = 9.sp, color = muted, maxLines = 1)
+                    }
+                    Text(
+                        "${item.second.clean(1)} kW",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (item.second > 0.02) item.third else muted.copy(alpha = 0.55f),
+                    )
+                }
+            }
+        }
     }
 }

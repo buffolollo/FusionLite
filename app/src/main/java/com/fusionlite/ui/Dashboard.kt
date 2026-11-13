@@ -55,12 +55,10 @@ import androidx.compose.ui.unit.sp
 import com.fusionlite.UiState
 import com.fusionlite.data.FlowAllocation
 import com.fusionlite.data.FlowMetrics
-import com.fusionlite.data.GridDirection
 import com.fusionlite.data.StationMetrics
 import com.fusionlite.data.allocation
 import com.fusionlite.data.clean
 import kotlinx.coroutines.delay
-import kotlin.math.abs
 
 @Composable
 fun DashboardScreen(
@@ -125,12 +123,14 @@ fun DashboardScreen(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 KpiTile(
-                    icon = "☀", label = "Today", value = metrics.dailyEnergy, unit = "kWh",
+                    icon = "☀", label = "Produced", value = metrics.dailyEnergy, unit = "kWh",
                     accent = palette.gold, modifier = Modifier.weight(1f),
                 )
                 KpiTile(
-                    icon = "⚡", label = "Total", value = metrics.cumulativeEnergy, unit = "kWh",
-                    accent = palette.cyan, modifier = Modifier.weight(1f),
+                    // Same StatisticsSnapshot.periodConsumption as the
+                    // Analytics "Consumed" MiniStat.
+                    icon = "⚡", label = "Consumed", value = state.today?.periodConsumption,
+                    unit = "kWh", accent = palette.cyan, modifier = Modifier.weight(1f),
                 )
             }
         }
@@ -379,7 +379,7 @@ private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boole
                 Column {
                     Text("Energy flow", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "Live power routing",
+                        flowSubtitle(metrics, allocation),
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -403,16 +403,15 @@ private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boole
                     )
                 }
             } else {
-                GridSummary(allocation)
-                Spacer(Modifier.height(6.dp))
                 EnergyFlowDiagram(
                     metrics = metrics,
                     allocation = allocation,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(258.dp),
+                        .height(292.dp),
                 )
-                SelfUseBar(metrics, allocation)
+                Spacer(Modifier.height(8.dp))
+                FlowAllocationBar(metrics = metrics, allocation = allocation)
                 error?.let {
                     Spacer(Modifier.height(6.dp))
                     Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
@@ -422,124 +421,19 @@ private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boole
     }
 }
 
-@Composable
-private fun GridSummary(allocation: FlowAllocation?) {
-    val palette = LocalFusionPalette.current
-    val direction = allocation?.gridDirection ?: GridDirection.IDLE
-    val color = when (direction) {
-        GridDirection.IMPORT -> palette.amber
-        GridDirection.EXPORT -> palette.green
-        GridDirection.IDLE -> palette.blue
-    }
-    val title = when (direction) {
-        GridDirection.IMPORT -> "Drawing from the grid"
-        GridDirection.EXPORT -> "Feeding the grid"
-        GridDirection.IDLE -> "Grid idle"
-    }
-    val value = when (direction) {
-        GridDirection.IMPORT -> allocation?.gridImport ?: 0.0
-        GridDirection.EXPORT -> allocation?.gridExport ?: 0.0
-        GridDirection.IDLE -> 0.0
-    }
-    val detail = when (direction) {
-        GridDirection.IMPORT -> "The grid is covering the shortfall right now."
-        GridDirection.EXPORT -> "Surplus solar is being exported right now."
-        GridDirection.IDLE -> "No import or export at this moment."
-    }
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.10f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.30f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                when (direction) {
-                    GridDirection.IMPORT -> "↓"
-                    GridDirection.EXPORT -> "↑"
-                    GridDirection.IDLE -> "•"
-                },
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = color,
-            )
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
-                Text(
-                    detail,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                "${value.clean(1)} kW",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = color,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SelfUseBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
-    val palette = LocalFusionPalette.current
-    val pv = metrics.pv ?: 0.0
-    if (pv <= 0.02 || allocation == null) return
-    val ratio = (allocation.selfConsumption / pv).coerceIn(0.0, 1.0)
-    val animated by animateFloatAsState(ratio.toFloat(), tween(900), label = "self-use")
-    val detail = buildString {
-        append("${allocation.selfConsumption.clean(1)} kW used on site")
-        when {
-            allocation.gridExport > 0.02 -> append(" · ${allocation.gridExport.clean(1)} kW exported")
-            allocation.gridImport > 0.02 -> append(" · ${allocation.gridImport.clean(1)} kW imported")
-        }
-    }
-    Column(Modifier.padding(top = 2.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                "SELF-CONSUMPTION",
-                fontSize = 9.sp,
-                letterSpacing = 1.2.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "${(ratio * 100).toInt()}%",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.gold,
-            )
-        }
-        Spacer(Modifier.height(5.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxWidth(animated)
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(Brush.horizontalGradient(listOf(palette.gold, palette.green))),
-            )
-        }
-        Spacer(Modifier.height(5.dp))
-        Text(
-            detail,
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+private fun flowSubtitle(metrics: FlowMetrics?, allocation: FlowAllocation?): String {
+    if (metrics == null || allocation == null) return "Live power routing"
+    return when {
+        allocation.gridExport > 0.05 ->
+            "Exporting ${allocation.gridExport.clean(1)} kW to the grid"
+        allocation.gridImport > 0.05 ->
+            "Importing ${allocation.gridImport.clean(1)} kW from the grid"
+        allocation.batteryCharge > 0.05 ->
+            "Charging the battery at ${allocation.batteryCharge.clean(1)} kW"
+        allocation.batteryDischarge > 0.05 ->
+            "Battery supplying ${allocation.batteryDischarge.clean(1)} kW"
+        (metrics.pv ?: 0.0) > 0.05 -> "Solar covering the load"
+        else -> "Live power routing"
     }
 }
 

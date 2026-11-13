@@ -7,23 +7,35 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
+ * FusionSolar uses -99999999 (and -9999999) as "no data" sentinels.
+ * They must never reach the UI: at the start of a new day the station list
+ * returns them for `dailyUseEnergy` / `dailySelfUseEnergy` until the server
+ * has aggregated the first readings.
+ */
+private const val NO_DATA_SENTINEL = -9_999_999.0
+
+/**
  * Loose number parsing for FusionSolar payloads. Values arrive as
  * "3.42", "3.42 kW", "3420 W" or "1,234.5" depending on host/version.
  * W values are normalised to kW.
  */
 fun parseNum(raw: Any?): Double? {
     if (raw == null) return null
-    if (raw is Number) return raw.toDouble()
+    if (raw is Number) {
+        val value = raw.toDouble()
+        return value.takeIf { it.isFinite() && it > NO_DATA_SENTINEL }
+    }
     val text = raw.toString().trim()
     if (text.isEmpty() || text == "null" || text == "--") return null
     val match = Regex("-?\\d+(?:[.,]\\d+)?").find(text) ?: return null
     val value = match.value.replace(',', '.').toDoubleOrNull() ?: return null
     val lower = text.lowercase()
-    return when {
+    val normalized = when {
         lower.contains("kw") -> value
         Regex("\\d\\s*w\\b").containsMatchIn(lower) -> value / 1000.0
         else -> value
     }
+    return normalized.takeIf { it > NO_DATA_SENTINEL }
 }
 
 fun Double.clean(digits: Int = 2): String {

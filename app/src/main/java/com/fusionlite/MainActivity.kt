@@ -151,6 +151,10 @@ data class UiState(
     val stats: StatisticsSnapshot? = null,
     val statsLoading: Boolean = false,
     val statsError: String? = null,
+    // Home "Consumed" KPI: a dedicated DAY snapshot so it mirrors the
+    // Analytics MiniStat exactly, independently of the Analytics window.
+    val today: StatisticsSnapshot? = null,
+    val todayLoading: Boolean = false,
     // Manual tariff / costs page
     val costsPeriod: StatisticsPeriod = StatisticsPeriod.MONTH,
     val costsAnchor: Long = System.currentTimeMillis(),
@@ -191,6 +195,8 @@ private fun FusionLiteApp(
     var pass by remember { mutableStateOf(initialSaved?.password.orEmpty()) }
     var host by remember { mutableStateOf(initialSaved?.host ?: FusionSolarConfig.DEFAULT_HOST) }
     var port by remember { mutableStateOf(initialSaved?.port ?: FusionSolarConfig.DEFAULT_PORT) }
+    // Throttles the Home day-snapshot refresh (the live loop runs every 15-60 s).
+    var lastTodayFetch by remember { mutableStateOf(0L) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiContext = LocalContext.current
     val activity = generateSequence(uiContext) { context ->
@@ -443,6 +449,60 @@ private fun FusionLiteApp(
     }
 
     /**
+     * Dedicated "today" snapshot for the home Consumed KPI.
+     *
+     * It uses exactly the same request and the same StatisticsSnapshot
+     * calculation as the Analytics page (StatisticsPeriod.DAY +
+     * periodConsumption), so the two figures always match regardless of the
+     * window currently selected in Analytics.
+     */
+    suspend fun performToday() {
+        val current = state
+        if (!current.loggedIn || current.todayLoading) return
+        val dn = current.selectedDn ?: return
+        var session = current.session ?: return
+        state = state.copy(todayLoading = true)
+        try {
+            val snapshot = try {
+                withContext(Dispatchers.IO) {
+                    repository.loadStatistics(
+                        session,
+                        dn,
+                        StatisticsPeriod.DAY,
+                        System.currentTimeMillis(),
+                    )
+                }
+            } catch (e: AuthExpiredException) {
+                val renewed = renewSession(session)
+                    ?: throw AuthExpiredException("Your saved session expired. Sign in again.")
+                session = renewed
+                withContext(Dispatchers.IO) {
+                    repository.loadStatistics(
+                        renewed,
+                        dn,
+                        StatisticsPeriod.DAY,
+                        System.currentTimeMillis(),
+                    )
+                }
+            }
+            state = state.copy(
+                todayLoading = false,
+                today = snapshot,
+                session = session,
+            )
+        } catch (e: AuthExpiredException) {
+            state = state.copy(
+                loggedIn = false,
+                todayLoading = false,
+                session = null,
+                message = friendlyError(e),
+            )
+        } catch (e: Exception) {
+            state = state.copy(todayLoading = false)
+        }
+    }
+
+    /**
      * Loads the energy window used by the Costs page. Kept separate from the
      * Analytics snapshot because the two pages can select different periods.
      */
@@ -582,6 +642,28 @@ private fun FusionLiteApp(
         }
     }
 
+    // Home Consumed KPI: keep a DAY snapshot for the current plant while Home
+    // is visible. The live loop recomposes every 15-60 s, so throttle the extra
+    // request to one per minute; a plant change reloads immediately.
+    LaunchedEffect(
+        state.loggedIn,
+        state.tab,
+        state.selectedDn,
+        state.session?.accessToken,
+        state.lastUpdated,
+    ) {
+        if (!state.loggedIn || state.tab != AppTab.HOME || state.selectedDn == null) {
+            return@LaunchedEffect
+        }
+        val snapshot = state.today
+        val missing = snapshot == null || snapshot.stationDn != state.selectedDn
+        val due = System.currentTimeMillis() - lastTodayFetch >= 60_000L
+        if (missing || due) {
+            lastTodayFetch = System.currentTimeMillis()
+            performToday()
+        }
+    }
+
     LaunchedEffect(
         state.loggedIn,
         state.tab,
@@ -658,6 +740,8 @@ private fun FusionLiteApp(
                 val selectStation: (String) -> Unit = { dn ->
                     state = state.copy(
                         selectedDn = dn,
+                        today = null,
+                        todayLoading = false,
                         stats = null,
                         statsError = null,
                         costs = null,
@@ -665,7 +749,11 @@ private fun FusionLiteApp(
                     )
                     scope.launch { performRefresh() }
                 }
-                val refresh: () -> Unit = { scope.launch { performRefresh() } }
+                val refresh: () -> Unit = {
+                    // Manual refresh also refreshes the home day snapshot.
+                    scope.launch { performToday() }
+                    scope.launch { performRefresh() }
+                }
 
                 Box(Modifier.fillMaxSize()) {
                     AnimatedContent(

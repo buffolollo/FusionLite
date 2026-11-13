@@ -73,24 +73,52 @@ data class StatisticsSnapshot(
 
     fun totalOf(points: List<SeriesPoint>): Double = points.sumOf { it.value }
 
+    /**
+     * The DAY series is instantaneous power (kW), so the samples must be
+     * multiplied by the bucket duration to become kWh. Month/year/lifetime
+     * buckets are already energy and are simply summed.
+     */
+    private fun bucketEnergy(points: List<SeriesPoint>): Double {
+        if (points.isEmpty()) return 0.0
+        if (period != StatisticsPeriod.DAY) return totalOf(points)
+        return totalOf(points) * bucketHours(points)
+    }
+
+    /** Bucket duration in hours, read from the "HH:mm" part of the xAxis. */
+    private fun bucketHours(points: List<SeriesPoint>): Double {
+        val minutes = points.mapNotNull { point ->
+            Regex("(\\d{1,2}):(\\d{2})").find(point.label)?.let { match ->
+                match.groupValues[1].toInt() * 60 + match.groupValues[2].toInt()
+            }
+        }
+        if (minutes.size < 3) {
+            return 24.0 / points.size.coerceAtLeast(1)
+        }
+        val deltas = minutes
+            .zipWithNext { previous, next -> if (next > previous) next - previous else next + 1440 - previous }
+            .sorted()
+        val median = deltas[deltas.size / 2]
+        return median.coerceAtLeast(1) / 60.0
+    }
+
     /** Sum of the visible buckets, falling back to the server's own total. */
     val periodProduction: Double
-        get() = parseNum(balance?.totalProductPower) ?: totalOf(production())
+        get() = parseNum(balance?.totalProductPower) ?: bucketEnergy(production())
 
     val periodConsumption: Double
-        get() = parseNum(balance?.totalUsePower) ?: totalOf(consumption())
+        get() = parseNum(balance?.totalUsePower) ?: bucketEnergy(consumption())
 
     val periodExport: Double
-        get() = parseNum(balance?.totalOnGridPower) ?: totalOf(gridExport())
+        get() = parseNum(balance?.totalOnGridPower) ?: bucketEnergy(gridExport())
 
     val periodImport: Double
-        get() = parseNum(balance?.totalBuyPower) ?: totalOf(gridImport())
+        get() = parseNum(balance?.totalBuyPower) ?: bucketEnergy(gridImport())
 
     val periodSelfUse: Double
-        get() = parseNum(balance?.totalSelfUsePower) ?: totalOf(selfUse())
+        get() = parseNum(balance?.totalSelfUsePower) ?: bucketEnergy(selfUse())
 
-    val charge: Double get() = totalOf(batteryCharge())
-    val discharge: Double get() = totalOf(batteryDischarge())
+    val charge: Double get() = bucketEnergy(batteryCharge())
+    val discharge: Double get() = bucketEnergy(batteryDischarge())
 
     /**
      * Headline number for the selected window. `totalProductPower` is the
