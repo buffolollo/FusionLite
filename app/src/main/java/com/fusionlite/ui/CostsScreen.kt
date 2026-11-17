@@ -1,28 +1,19 @@
 package com.fusionlite.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -30,11 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fusionlite.UiState
 import com.fusionlite.data.EnergyCosts
 import com.fusionlite.data.StatisticsPeriod
@@ -47,6 +39,9 @@ import java.util.Locale
  * Manual tariff calculator over the same energy-balance window used by the
  * Analytics page. Prices are entered in cents per kWh; costs appear in the
  * station's own currency (when the real-KPI payload reports one).
+ *
+ * Both fields validate inline (never with a blocking dialog) and keep the raw
+ * text so a partially typed value such as "12," is not clobbered.
  */
 @Composable
 fun CostsScreen(
@@ -68,17 +63,25 @@ fun CostsScreen(
     val currency = costs.currency
     val hasData = state.costs != null
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    FusionPage(modifier = modifier, bottomPadding = design.navClearance) {
         item {
-            CostsHeader(
-                stationName = station?.name ?: "Solar plant",
-                loading = state.costsLoading,
-                onRefresh = onRefresh,
+            FusionScreenHeader(
+                eyebrow = "Energy costs",
+                title = station?.name ?: "Solar plant",
+                accent = palette.amber,
+                trailing = {
+                    FusionIconButton(
+                        icon = FusionIcon.REFRESH,
+                        contentDescription = if (state.costsLoading) "Refreshing cost data" else "Refresh cost data",
+                        onClick = onRefresh,
+                        enabled = !state.costsLoading,
+                        tint = palette.amber,
+                        borderColor = palette.border,
+                        spinning = state.costsLoading,
+                    )
+                },
             )
         }
 
@@ -98,23 +101,66 @@ fun CostsScreen(
         }
 
         item {
-            TariffInputCard(
-                title = "Purchase price",
-                subtitle = "What you pay for 1 kWh taken from the grid.",
-                value = state.buyPriceCents,
-                accent = palette.gold,
-                onValue = onBuyPrice,
-            )
-        }
-
-        item {
-            TariffInputCard(
-                title = "Export sell price",
-                subtitle = "What the grid pays you for 1 kWh exported.",
-                value = state.sellPriceCents,
-                accent = palette.green,
-                onValue = onSellPrice,
-            )
+            FusionCard {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Your tariff", style = design.type.heading, color = palette.textPrimary)
+                    FusionStatusPill(
+                        label = "Stored on device",
+                        tone = FusionTone.NEUTRAL,
+                        icon = FusionIcon.LOCK,
+                    )
+                }
+                Text(
+                    "Enter what one kilowatt-hour costs you. The app multiplies these prices by " +
+                        "the selected window's energy; nothing is sent to the server.",
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
+                )
+                FusionTextField(
+                    value = state.buyPriceCents,
+                    onValueChange = onBuyPrice,
+                    label = "Purchase price",
+                    supportingText = "What you pay for 1 kWh taken from the grid.",
+                    placeholder = "e.g. 18.5",
+                    leadingIcon = FusionIcon.GRID,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    error = if (state.buyPriceCents.isNotBlank() && buy == null) {
+                        "Enter a number, for example 18.5"
+                    } else {
+                        null
+                    },
+                    success = if (state.buyPriceCents.isNotBlank() && buy != null) {
+                        "Valid price · stored on this device"
+                    } else {
+                        null
+                    },
+                    accent = palette.gold,
+                )
+                FusionTextField(
+                    value = state.sellPriceCents,
+                    onValueChange = onSellPrice,
+                    label = "Export sell price",
+                    supportingText = "What the grid pays you for 1 kWh exported.",
+                    placeholder = "e.g. 6.0",
+                    leadingIcon = FusionIcon.ARROW_UP_RIGHT,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    error = if (state.sellPriceCents.isNotBlank() && sell == null) {
+                        "Enter a number, for example 6.0"
+                    } else {
+                        null
+                    },
+                    success = if (state.sellPriceCents.isNotBlank() && sell != null) {
+                        "Valid price · stored on this device"
+                    } else {
+                        null
+                    },
+                    accent = palette.green,
+                )
+            }
         }
 
         item {
@@ -129,31 +175,29 @@ fun CostsScreen(
         }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MoneyStat(
-                    label = "Export revenue",
-                    value = if (sell != null) costs.exportRevenue else null,
-                    caption = if (sell != null) {
-                        "${kwh(costs.exportKwh)} × ${price(costs.sellCentsPerKwh)} ¢"
-                    } else {
-                        "Enter a sell price"
-                    },
-                    accent = palette.green,
-                    currency = currency,
-                    modifier = Modifier.weight(1f),
-                )
-                MoneyStat(
-                    label = "Net bill",
-                    value = if (buy != null) costs.netBill else null,
-                    caption = if (buy != null) {
-                        "Grid import − export"
-                    } else {
-                        "Enter a purchase price"
-                    },
-                    accent = palette.cyan,
-                    currency = currency,
-                    modifier = Modifier.weight(1f),
-                )
+            FusionGrid(itemCount = 2, minItemWidth = 140.dp) { index, tileModifier ->
+                when (index) {
+                    0 -> MoneyStat(
+                        label = "Export revenue",
+                        value = if (sell != null) costs.exportRevenue else null,
+                        caption = if (sell != null) {
+                            "${kwh(costs.exportKwh)} × ${price(costs.sellCentsPerKwh)} ¢"
+                        } else {
+                            "Enter a sell price"
+                        },
+                        tone = FusionTone.SUCCESS,
+                        currency = currency,
+                        modifier = tileModifier,
+                    )
+                    else -> MoneyStat(
+                        label = "Net bill",
+                        value = if (buy != null) costs.netBill else null,
+                        caption = if (buy != null) "Grid import − export" else "Enter a purchase price",
+                        tone = FusionTone.INFO,
+                        currency = currency,
+                        modifier = tileModifier,
+                    )
+                }
             }
         }
 
@@ -164,101 +208,8 @@ fun CostsScreen(
                 "Prices are stored on this device and are not sent to the server. " +
                     "Costs use the selected ${state.costsPeriod.title.lowercase()} window " +
                     "(${rangeLabel(state.costsPeriod, state.costsAnchor)}).",
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun CostsHeader(stationName: String, loading: Boolean, onRefresh: () -> Unit) {
-    val palette = LocalFusionPalette.current
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column {
-            Text(
-                "ENERGY COSTS",
-                fontSize = 9.sp,
-                letterSpacing = 2.2.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.amber,
-            )
-            Text(
-                stationName,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Box(
-            Modifier
-                .clip(CircleShape)
-                .background(palette.glass)
-                .border(1.dp, palette.amber.copy(alpha = 0.25f), CircleShape)
-                .clickable(enabled = !loading, onClick = onRefresh)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            Text(
-                if (loading) "SYNCING" else "REFRESH",
-                fontSize = 9.sp,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (loading) palette.amber.copy(alpha = 0.5f) else palette.amber,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TariffInputCard(
-    title: String,
-    subtitle: String,
-    value: String,
-    accent: Color,
-    onValue: (String) -> Unit,
-) {
-    val invalid = value.isNotBlank() && parseCentsPerKwh(value) == null
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                title.uppercase(Locale.getDefault()),
-                fontSize = 9.sp,
-                letterSpacing = 1.8.sp,
-                fontWeight = FontWeight.Bold,
-                color = accent,
-            )
-            Text(
-                subtitle,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValue,
-                singleLine = true,
-                isError = invalid,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                placeholder = { Text("e.g. 18.5") },
-                suffix = { Text("¢/kWh") },
-                supportingText = if (invalid) {
-                    { Text("Enter a number, for example 18.5") }
-                } else {
-                    null
-                },
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
+                style = design.type.bodySmall,
+                color = palette.textTertiary,
             )
         }
     }
@@ -274,49 +225,53 @@ private fun ConsumptionCostCard(
     currency: String?,
 ) {
     val palette = LocalFusionPalette.current
-    Box(
+    val design = LocalFusionDesign.current
+    val shape = RoundedCornerShape(design.radiusHero)
+    Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(shape)
             .background(
                 Brush.linearGradient(
                     listOf(
-                        SolarAmber.copy(alpha = 0.20f),
-                        palette.surfaceHigh.copy(alpha = 0.85f),
+                        palette.amber.copy(alpha = 0.22f),
+                        palette.surfaceRaised,
                     )
                 )
-            ),
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Text(
-                "CONSUMPTION COST · ${period.title.uppercase(Locale.getDefault())}",
-                fontSize = 9.sp,
-                letterSpacing = 1.8.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.amber,
             )
-            Spacer(Modifier.height(6.dp))
+            .border(1.dp, palette.amber.copy(alpha = 0.30f), shape)
+            .padding(design.spacingXl),
+        verticalArrangement = Arrangement.spacedBy(design.spacingXs),
+    ) {
+        Text(
+            "CONSUMPTION COST · ${period.title.uppercase(Locale.getDefault())}",
+            style = design.type.labelMicro,
+            color = palette.amber,
+        )
+        if (loading && !hasData) {
+            FusionSkeleton(Modifier.size(width = 160.dp, height = 42.dp))
+        } else {
             Text(
                 when {
                     !priceSet -> "—"
-                    loading && !hasData -> "…"
                     else -> money(costs.consumptionCost, currency)
                 },
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                when {
-                    !priceSet -> "Enter your purchase price to calculate costs."
-                    !hasData && !loading -> "No energy data for this window."
-                    else -> "${kwh(costs.consumptionKwh)} × ${price(costs.buyCentsPerKwh)} ¢/kWh"
-                },
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = design.type.displaySmall,
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
             )
         }
+        Text(
+            when {
+                !priceSet -> "Enter your purchase price to calculate costs."
+                !hasData && !loading -> "No energy data for this window."
+                else -> "${kwh(costs.consumptionKwh)} × ${price(costs.buyCentsPerKwh)} ¢/kWh"
+            },
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+        )
     }
 }
 
@@ -325,128 +280,113 @@ private fun MoneyStat(
     label: String,
     value: Double?,
     caption: String,
-    accent: Color,
+    tone: FusionTone,
     currency: String?,
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalFusionPalette.current
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = modifier,
+    val design = LocalFusionDesign.current
+    val color = tone.color(palette)
+    Column(
+        modifier
+            .clip(RoundedCornerShape(design.radiusLg))
+            .background(palette.surfaceRaised)
+            .border(1.dp, palette.border, RoundedCornerShape(design.radiusLg))
+            .padding(design.spacingLg),
+        verticalArrangement = Arrangement.spacedBy(design.spacingXs),
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(
-                label.uppercase(Locale.getDefault()),
-                fontSize = 8.5.sp,
-                letterSpacing = 1.2.sp,
-                fontWeight = FontWeight.Bold,
-                color = accent,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                value?.let { money(it, currency) } ?: "—",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (value != null && value < 0) palette.green
-                else MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                caption,
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            label.uppercase(Locale.getDefault()),
+            style = design.type.labelMicro,
+            color = color,
+            maxLines = 1,
+        )
+        Text(
+            value?.let { money(it, currency) } ?: "—",
+            style = design.type.numeric,
+            color = if (value != null && value < 0) palette.success else palette.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            caption,
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
 @Composable
 private fun CostBreakdownCard(costs: EnergyCosts, currency: String?, hasData: Boolean) {
     val palette = LocalFusionPalette.current
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val design = LocalFusionDesign.current
+    FusionCard {
+        Text("Breakdown", style = design.type.heading, color = palette.textPrimary)
+        Text(
+            "How each part of the bill is calculated",
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+        )
+        if (!hasData) {
             Text(
-                "BREAKDOWN",
-                fontSize = 9.sp,
-                letterSpacing = 1.8.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                "Load a window to see consumption, grid import and export totals.",
+                style = design.type.bodySmall,
+                color = palette.textSecondary,
             )
-            if (!hasData) {
+        }
+        CostRow(
+            label = "Consumption",
+            energy = costs.consumptionKwh,
+            amount = costs.consumptionCost,
+            currency = currency,
+            accent = palette.gold,
+            note = "household load",
+        )
+        CostRow(
+            label = "From grid",
+            energy = costs.importKwh,
+            amount = costs.importCost,
+            currency = currency,
+            accent = palette.cyan,
+            note = "purchased",
+        )
+        CostRow(
+            label = "Self-consumed PV",
+            energy = costs.selfUseKwh,
+            amount = costs.selfUseSavings,
+            currency = currency,
+            accent = palette.green,
+            note = "avoided purchase",
+        )
+        CostRow(
+            label = "Exported",
+            energy = costs.exportKwh,
+            amount = -costs.exportRevenue,
+            currency = currency,
+            accent = palette.green,
+            note = "credited",
+        )
+        FusionDivider()
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("Net bill", style = design.type.subheading, color = palette.textPrimary)
                 Text(
-                    "Load a window to see consumption, grid import and export totals.",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "grid import − export revenue",
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
                 )
             }
-            CostRow(
-                label = "Consumption",
-                energy = costs.consumptionKwh,
-                amount = costs.consumptionCost,
-                currency = currency,
-                accent = palette.gold,
-                note = "household load",
+            Text(
+                money(costs.netBill, currency),
+                style = design.type.numericSmall,
+                color = if (costs.netBill < 0) palette.success else palette.gold,
             )
-            CostRow(
-                label = "From grid",
-                energy = costs.importKwh,
-                amount = costs.importCost,
-                currency = currency,
-                accent = palette.cyan,
-                note = "purchased",
-            )
-            CostRow(
-                label = "Self-consumed PV",
-                energy = costs.selfUseKwh,
-                amount = costs.selfUseSavings,
-                currency = currency,
-                accent = palette.green,
-                note = "avoided purchase",
-            )
-            CostRow(
-                label = "Exported",
-                energy = costs.exportKwh,
-                amount = -costs.exportRevenue,
-                currency = currency,
-                accent = palette.green,
-                note = "credited",
-            )
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
-            )
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("Net bill", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        "grid import − export revenue",
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    money(costs.netBill, currency),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (costs.netBill < 0) palette.green else palette.gold,
-                )
-            }
         }
     }
 }
@@ -460,34 +400,38 @@ private fun CostRow(
     accent: Color,
     note: String,
 ) {
+    val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
             Box(
                 Modifier
                     .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.18f))
+                    .background(accent.copy(alpha = 0.10f))
                     .padding(horizontal = 8.dp, vertical = 3.dp),
             ) {
-                Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = accent)
+                Text(label, style = design.type.label, color = accent, maxLines = 1)
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(design.spacingSm))
             Text(
                 "$note · ${kwh(energy)}",
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = design.type.bodySmall,
+                color = palette.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(design.spacingSm))
         Text(
             money(amount, currency),
-            fontSize = 12.sp,
+            style = design.type.label,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = palette.textPrimary,
+            maxLines = 1,
         )
     }
 }

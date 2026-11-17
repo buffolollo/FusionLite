@@ -212,3 +212,45 @@ Before delivering any UI code, verify:
 - [ ] Responsive: 375px, 768px, 1024px, 1440px
 - [ ] No content hidden behind fixed navbars
 - [ ] No horizontal scroll on mobile
+
+---
+
+## Implementation notes — FusionLite (Compose)
+
+The generated guidance above is a web/CSS baseline. FusionLite implements the
+same intent natively in Jetpack Compose; where the two differ, the notes below
+win.
+
+### Token mapping
+
+| Web token (generated) | Compose implementation |
+|---|---|
+| `--color-primary` / `--color-accent` | `FusionPalette.gold` (solar amber-gold) and `MaterialTheme.colorScheme.primary` |
+| `--color-background` / `--color-card` | `FusionPalette.surfaceBase` / `surfaceRaised` (light + dark instances) |
+| `--color-foreground` / muted | `textPrimary` / `textSecondary` / `textTertiary` |
+| `--color-border` / ring | `border`, `borderStrong`, `focusRing` |
+| `--space-*` | `FusionDesignSystem.spacingXs…spacingSection` (4/8dp rhythm) |
+| `--shadow-*` | `FusionElevation` + drawn overlays (no layout-shifting hover) |
+| CSS transitions 150–300ms | `FusionMotion.fast/base/slow` (140/220/380ms) |
+
+### Deliberate deviations
+
+- **Fonts:** the generated pairing (Fira Code + Fira Sans) would require
+  bundling font assets or a runtime download. FusionLite stays offline-first and
+  uses the platform sans with tabular figures for numbers. The hierarchy
+  (display/title/heading/body/label) is preserved.
+- **Glassmorphism:** kept as layered translucent surfaces and a frosted nav bar,
+  but every foreground pair is measured for contrast; the generated sample
+  `rgba` borders are replaced with semantic `border` / `borderStrong`.
+- **Hover:** pointer hover exists (`collectIsHoveredAsState`) but press is the
+  primary feedback on touch. No scale/translate hover that shifts layout.
+- **Emoji icons:** forbidden. All icons are hand-drawn vectors on a 24×24 grid
+  (`ui/Icons.kt`), one stroke weight, tinted by the active theme.
+
+### Where to verify
+
+- Component states and contrast tables: `ACCESSIBILITY.md` in this folder.
+- Token source of truth: `app/src/main/java/com/fusionlite/ui/Theme.kt` and
+  `FusionTokens.kt`.
+- Shared component library: `app/src/main/java/com/fusionlite/ui/Components.kt`.
+- Responsive frame: `app/src/main/java/com/fusionlite/ui/Adaptive.kt`.

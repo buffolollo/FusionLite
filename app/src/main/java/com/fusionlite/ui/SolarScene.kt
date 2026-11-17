@@ -43,6 +43,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.PathMeasure
@@ -81,7 +82,9 @@ fun SolarPanelScene(
 ) {
     val energy = powerFraction.coerceIn(0f, 1f)
     val fraction = max(energy, 0.02f)
-    val dark = LocalFusionPalette.current.dark
+    val palette = LocalFusionPalette.current
+    val dark = palette.dark
+    val night = palette.night.coerceIn(0f, 1f)
 
     // Real-time production drives the scene tempo: ~0.35x at night/zero output
     // up to 2x at full capacity. The phases are integrated with
@@ -93,8 +96,16 @@ fun SolarPanelScene(
     var sweep by remember { mutableFloatStateOf(0f) }
     var pulse by remember { mutableFloatStateOf(0f) }
     var flow by remember { mutableFloatStateOf(0f) }
+    val reducedMotion = LocalFusionReducedMotion.current
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reducedMotion) {
+        if (reducedMotion) {
+            // Reduced motion: show a representative still frame.
+            sweep = 0.42f
+            pulse = 1.2f
+            flow = 0.35f
+            return@LaunchedEffect
+        }
         val cycle = (2 * PI).toFloat()
         var lastFrame = 0L
         while (true) {
@@ -113,17 +124,14 @@ fun SolarPanelScene(
     }
 
     Canvas(modifier) {
+        val daySky = listOf(Color(0xFF8FC4F2), Color(0xFFBFDFFA), Color(0xFFEAF4FF))
+        val nightSky = listOf(Color(0xFF0A1730), Color(0xFF0C2243), Color(0xFF07101F))
         drawRect(
             Brush.verticalGradient(
-                if (dark) {
-                    listOf(Color(0xFF0A1730), Color(0xFF0C2243), Color(0xFF07101F))
-                } else {
-                    // Daylight sky for the white theme.
-                    listOf(Color(0xFF8FC4F2), Color(0xFFBFDFFA), Color(0xFFEAF4FF))
-                }
+                daySky.zip(nightSky) { day, nightColor -> lerp(day, nightColor, night) }
             )
         )
-        if (dark) drawStars(pulse)
+        if (night > 0.01f) drawStars(pulse, night)
         drawSun(Offset(size.width * 0.80f, size.height * 0.24f), size.minDimension * 0.075f, pulse, fraction)
         drawPanels(Offset(size.width * 0.04f, size.height * 0.40f), size.width * 0.52f, size.height * 0.52f, fraction, sweep)
         if (showHouse) {
@@ -139,7 +147,7 @@ fun SolarPanelScene(
     }
 }
 
-private fun DrawScope.drawStars(phase: Float) {
+private fun DrawScope.drawStars(phase: Float, alpha: Float = 1f) {
     val seed = 17
     var value = seed
     repeat(26) { i ->
@@ -148,7 +156,11 @@ private fun DrawScope.drawStars(phase: Float) {
         value = (value * 1103515245 + 12345) and 0x7fffffff
         val y = (value % 1000) / 1000f * size.height * 0.62f
         val twinkle = 0.25f + 0.55f * (((sin(phase + i) + 1f) / 2f))
-        drawCircle(Color.White.copy(alpha = twinkle * 0.55f), radius = 1.1f + (i % 3) * 0.5f, center = Offset(x, y))
+        drawCircle(
+            Color.White.copy(alpha = twinkle * 0.55f * alpha),
+            radius = 1.1f + (i % 3) * 0.5f,
+            center = Offset(x, y),
+        )
     }
 }
 
@@ -433,7 +445,12 @@ fun EnergyFlowDiagram(
     var phase by remember { mutableFloatStateOf(0f) }
     val activity = (pv + discharge + gridImport).coerceIn(0.0, 8.0)
     val activityState = rememberUpdatedState(activity)
-    LaunchedEffect(Unit) {
+    val reducedMotion = LocalFusionReducedMotion.current
+    LaunchedEffect(reducedMotion) {
+        if (reducedMotion) {
+            phase = 0.35f
+            return@LaunchedEffect
+        }
         var lastFrame = 0L
         while (true) {
             withFrameNanos { now ->
@@ -859,7 +876,7 @@ fun FlowAllocationBar(metrics: FlowMetrics, allocation: FlowAllocation?) {
     val animated = items.map { item ->
         animateFloatAsState(
             targetValue = item.second.toFloat().coerceAtLeast(0f),
-            animationSpec = tween(650),
+            animationSpec = tween(if (LocalFusionReducedMotion.current) 0 else 650),
             label = "alloc-${item.first}",
         ).value
     }

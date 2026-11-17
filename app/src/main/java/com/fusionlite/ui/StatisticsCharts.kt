@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +35,11 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -93,13 +99,41 @@ fun ProductionAreaChart(
 ) {
     var selected by remember(points) { mutableIntStateOf(-1) }
     val palette = LocalFusionPalette.current
+    val reduced = LocalFusionReducedMotion.current
     val reveal = remember(points) { Animatable(0f) }
-    LaunchedEffect(points) {
-        reveal.snapTo(0f)
-        reveal.animateTo(1f, tween(720))
+    LaunchedEffect(points, reduced) {
+        if (reduced) {
+            reveal.snapTo(1f)
+        } else {
+            reveal.snapTo(0f)
+            reveal.animateTo(1f, tween(720))
+        }
+    }
+    val selectedDescription = if (selected in points.indices) {
+        "${points[selected].label}: ${points[selected].value.clean(1)} $unit"
+    } else {
+        null
     }
 
-    Box(modifier) {
+    Box(
+        modifier.semantics {
+            if (selectedDescription != null) stateDescription = selectedDescription
+            customActions = listOf(
+                CustomAccessibilityAction("Next data point") {
+                    selected = if (points.isEmpty()) -1 else (selected + 1) % points.size
+                    true
+                },
+                CustomAccessibilityAction("Previous data point") {
+                    selected = if (points.isEmpty()) -1 else if (selected <= 0) points.lastIndex else selected - 1
+                    true
+                },
+                CustomAccessibilityAction("Clear selection") {
+                    selected = -1
+                    true
+                },
+            )
+        },
+    ) {
         Canvas(
             Modifier
                 .fillMaxSize()
@@ -143,7 +177,7 @@ fun ProductionAreaChart(
                     left - 6.dp.toPx(),
                     y + 4.dp.toPx(),
                     labelColor,
-                    9.sp.toPx(),
+                    10.5.sp.toPx(),
                     align = android.graphics.Paint.Align.RIGHT,
                 )
             }
@@ -203,7 +237,7 @@ fun ProductionAreaChart(
                         p.x.coerceIn(left, right),
                         size.height - 6.dp.toPx(),
                         labelColor,
-                        8.5.sp.toPx(),
+                        9.5.sp.toPx(),
                     )
                 }
             }
@@ -222,28 +256,28 @@ fun ProductionAreaChart(
                 drawCircle(accent, radius = 7.5.dp.toPx(), center = p, style = Stroke(1.5.dp.toPx()))
 
                 val tag = "${points[selected].label} · ${points[selected].value.clean(1)} $unit"
-                val tagWidth = tag.length * 5.2.dp.toPx() + 18.dp.toPx()
+                val tagWidth = tag.length * 6.4.dp.toPx() + 20.dp.toPx()
                 val tagX = (p.x - tagWidth / 2f).coerceIn(2.dp.toPx(), size.width - tagWidth - 2.dp.toPx())
-                val tagY = (p.y - 30.dp.toPx()).coerceAtLeast(0f)
+                val tagY = (p.y - 34.dp.toPx()).coerceAtLeast(0f)
                 drawRoundRect(
                     color = palette.surfaceHigh.copy(alpha = 0.96f),
                     topLeft = Offset(tagX, tagY),
-                    size = Size(tagWidth, 20.dp.toPx()),
-                    cornerRadius = CornerRadius(10.dp.toPx()),
+                    size = Size(tagWidth, 24.dp.toPx()),
+                    cornerRadius = CornerRadius(12.dp.toPx()),
                 )
                 drawRoundRect(
                     color = accent.copy(alpha = 0.55f),
                     topLeft = Offset(tagX, tagY),
-                    size = Size(tagWidth, 20.dp.toPx()),
-                    cornerRadius = CornerRadius(10.dp.toPx()),
+                    size = Size(tagWidth, 24.dp.toPx()),
+                    cornerRadius = CornerRadius(12.dp.toPx()),
                     style = Stroke(1.dp.toPx()),
                 )
                 text(
                     tag,
                     tagX + tagWidth / 2f,
-                    tagY + 14.dp.toPx(),
+                    tagY + 16.5.dp.toPx(),
                     palette.chartTagText,
-                    9.sp.toPx(),
+                    10.5.sp.toPx(),
                 )
             }
         }
@@ -273,9 +307,14 @@ fun GroupedEnergyBars(
 ) {
     val reveal = remember(primary, secondary) { Animatable(0f) }
     val palette = LocalFusionPalette.current
-    LaunchedEffect(primary, secondary) {
-        reveal.snapTo(0f)
-        reveal.animateTo(1f, tween(650))
+    val reduced = LocalFusionReducedMotion.current
+    LaunchedEffect(primary, secondary, reduced) {
+        if (reduced) {
+            reveal.snapTo(1f)
+        } else {
+            reveal.snapTo(0f)
+            reveal.animateTo(1f, tween(650))
+        }
     }
 
     Box(modifier) {
@@ -304,7 +343,7 @@ fun GroupedEnergyBars(
                     left - 6.dp.toPx(),
                     y + 4.dp.toPx(),
                     palette.chartLabel,
-                    9.sp.toPx(),
+                    10.5.sp.toPx(),
                     align = android.graphics.Paint.Align.RIGHT,
                 )
             }
@@ -344,7 +383,7 @@ fun GroupedEnergyBars(
                         center.coerceIn(left, right),
                         size.height - 5.dp.toPx(),
                         palette.chartLabel,
-                        8.5.sp.toPx(),
+                        9.5.sp.toPx(),
                     )
                 }
             }
@@ -376,13 +415,30 @@ fun EnergyDonut(
     val positive = segments.filter { it.value > 0.0 }
     val total = positive.sumOf { it.value }
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val reduced = LocalFusionReducedMotion.current
     val sweep = remember(segments) { Animatable(0f) }
-    LaunchedEffect(segments) {
-        sweep.snapTo(0f)
-        sweep.animateTo(1f, tween(900))
+    LaunchedEffect(segments, reduced) {
+        if (reduced) {
+            sweep.snapTo(1f)
+        } else {
+            sweep.snapTo(0f)
+            sweep.animateTo(1f, tween(900))
+        }
     }
 
-    Box(modifier, contentAlignment = Alignment.Center) {
+    Box(
+        modifier.semantics {
+            contentDescription = if (total > 0.0) {
+                "Energy mix: " + positive.joinToString(", ") {
+                    "${it.label} ${(it.value / total * 100).toInt()} percent"
+                }
+            } else {
+                "Energy mix has no data"
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.fillMaxSize()) {
             val ring = 18.dp.toPx()
             val diameter = minOf(size.width, size.height) - ring
@@ -441,21 +497,18 @@ fun EnergyDonut(
         ) {
             Text(
                 centerTitle.uppercase(),
-                fontSize = 8.5.sp,
-                letterSpacing = 1.4.sp,
-                fontWeight = FontWeight.SemiBold,
+                style = design.type.labelMicro,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 centerValue,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
+                style = design.type.numericSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             if (centerCaption.isNotEmpty()) {
                 Text(
                     centerCaption,
-                    fontSize = 9.sp,
+                    style = design.type.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -474,9 +527,11 @@ fun MetricBar(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val reduced = LocalFusionReducedMotion.current
     val animated = androidx.compose.animation.core.animateFloatAsState(
         targetValue = fraction.coerceIn(0f, 1f),
-        animationSpec = tween(720),
+        animationSpec = tween(if (reduced) 0 else 720),
         label = "metric-bar-$label",
     )
     androidx.compose.foundation.layout.Column(
@@ -489,12 +544,12 @@ fun MetricBar(
         ) {
             Text(
                 label,
-                fontSize = 11.sp,
+                style = design.type.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 "${value.clean(1)} $unit",
-                fontSize = 11.sp,
+                style = design.type.label,
                 fontWeight = FontWeight.SemiBold,
                 color = color,
             )
@@ -503,6 +558,10 @@ fun MetricBar(
             Modifier
                 .fillMaxWidth()
                 .height(6.dp)
+                .progressSemantics(fraction.coerceIn(0f, 1f))
+                .semantics {
+                    contentDescription = "$label ${value.clean(1)} $unit"
+                }
                 .background(palette.glassStrong, androidx.compose.foundation.shape.RoundedCornerShape(50)),
         ) {
             Box(
@@ -527,13 +586,22 @@ fun RatioGauge(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val reduced = LocalFusionReducedMotion.current
     val animated = androidx.compose.animation.core.animateFloatAsState(
         targetValue = ratio.coerceIn(0f, 1f),
-        animationSpec = tween(850),
+        animationSpec = tween(if (reduced) 0 else 850),
         label = "gauge",
     )
-    Box(modifier, contentAlignment = Alignment.Center) {
+    Box(
+        modifier
+            .progressSemantics(ratio.coerceIn(0f, 1f))
+            .semantics {
+                contentDescription = "$caption ${(ratio.coerceIn(0f, 1f) * 100).roundToInt()} percent"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 7.dp.toPx()
             val d = minOf(size.width, size.height) - stroke
@@ -573,14 +641,15 @@ fun RatioGauge(
         androidx.compose.foundation.layout.Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${(animated.value * 100).roundToInt()}%",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
+                style = design.type.numericSmall,
                 color = color,
             )
             Text(
                 caption,
-                fontSize = 8.sp,
+                style = design.type.labelMicro,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
             )
         }
     }

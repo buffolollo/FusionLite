@@ -1,57 +1,43 @@
 package com.fusionlite.ui
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fusionlite.UiState
 import com.fusionlite.data.SeriesPoint
 import com.fusionlite.data.StatisticsPeriod
@@ -93,32 +79,36 @@ fun StatisticsScreen(
     val snapshot = state.stats
     val station = state.stations.firstOrNull { it.dn == state.selectedDn } ?: state.stations.firstOrNull()
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
 
     val production = remember(snapshot) { snapshot?.production().orEmpty() }
     val consumption = remember(snapshot) { snapshot?.consumption().orEmpty() }
     val gridExport = remember(snapshot) { snapshot?.gridExport().orEmpty() }
     val gridImport = remember(snapshot) { snapshot?.gridImport().orEmpty() }
 
-    val design = LocalFusionDesign.current
-    // On tablets / landscape the column stays a readable measure instead of
-    // stretching edge to edge (adaptive gutter rule).
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-        LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .widthIn(max = design.maxContentWidth),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
+    FusionPage(modifier = modifier, bottomPadding = design.navClearance) {
         item {
-            StatisticsHeader(
-                stationName = station?.name ?: "Solar plant",
-                loading = state.statsLoading,
-                onRefresh = onRefresh,
+            FusionScreenHeader(
+                eyebrow = "Production analytics",
+                title = station?.name ?: "Solar plant",
+                accent = palette.cyan,
+                trailing = {
+                    FusionIconButton(
+                        icon = FusionIcon.REFRESH,
+                        contentDescription = if (state.statsLoading) "Refreshing analytics" else "Refresh analytics",
+                        onClick = onRefresh,
+                        enabled = !state.statsLoading,
+                        tint = palette.cyan,
+                        borderColor = palette.border,
+                        spinning = state.statsLoading,
+                    )
+                },
             )
         }
 
-        item { PeriodSelector(selected = state.statsPeriod, onSelect = onPeriod) }
+        item {
+            PeriodSelector(selected = state.statsPeriod, onSelect = onPeriod)
+        }
 
         item {
             PeriodNavigator(
@@ -136,28 +126,39 @@ fun StatisticsScreen(
         item { HeroProduction(snapshot, state.statsPeriod, state.statsAnchor, state.statsLoading) }
 
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MiniStat(
-                    label = "To grid",
-                    value = snapshot?.periodExport,
-                    unit = "kWh",
-                    accent = palette.green,
-                    modifier = Modifier.weight(1f),
-                )
-                MiniStat(
-                    label = "Consumed",
-                    value = snapshot?.periodConsumption,
-                    unit = "kWh",
-                    accent = palette.cyan,
-                    modifier = Modifier.weight(1f),
-                )
-                MiniStat(
-                    label = "Self-use",
-                    value = snapshot?.periodSelfUse,
-                    unit = "kWh",
-                    accent = palette.gold,
-                    modifier = Modifier.weight(1f),
-                )
+            FusionGrid(itemCount = 3, minItemWidth = 140.dp) { index, tileModifier ->
+                when (index) {
+                    0 -> FusionStatTile(
+                        label = "To grid",
+                        value = snapshot?.periodExport?.clean(1) ?: "—",
+                        unit = "kWh",
+                        icon = FusionIcon.ARROW_UP_RIGHT,
+                        tone = FusionTone.SUCCESS,
+                        caption = "Exported",
+                        loading = state.statsLoading && snapshot == null,
+                        modifier = tileModifier,
+                    )
+                    1 -> FusionStatTile(
+                        label = "Consumed",
+                        value = snapshot?.periodConsumption?.clean(1) ?: "—",
+                        unit = "kWh",
+                        icon = FusionIcon.BOLT,
+                        tone = FusionTone.INFO,
+                        caption = "Household load",
+                        loading = state.statsLoading && snapshot == null,
+                        modifier = tileModifier,
+                    )
+                    else -> FusionStatTile(
+                        label = "Self-use",
+                        value = snapshot?.periodSelfUse?.clean(1) ?: "—",
+                        unit = "kWh",
+                        icon = FusionIcon.SUN,
+                        tone = FusionTone.ACCENT,
+                        caption = "Used on site",
+                        loading = state.statsLoading && snapshot == null,
+                        modifier = tileModifier,
+                    )
+                }
             }
         }
 
@@ -172,9 +173,7 @@ fun StatisticsScreen(
             )
         }
 
-        item {
-            MixCard(snapshot = snapshot, production = production)
-        }
+        item { MixCard(snapshot = snapshot, production = production) }
 
         item {
             BreakdownCard(
@@ -193,64 +192,6 @@ fun StatisticsScreen(
                 snapshot = snapshot,
                 lastUpdated = state.lastUpdated,
                 diag = state.diag,
-                onRefresh = onRefresh,
-            )
-        }
-        }
-    }
-}
-
-@Composable
-private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: () -> Unit) {
-    val palette = LocalFusionPalette.current
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column {
-            Text(
-                "PRODUCTION ANALYTICS",
-                fontSize = 9.sp,
-                letterSpacing = 2.2.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.cyan,
-            )
-            Text(
-                stationName,
-                fontSize = 21.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        val interaction = remember { MutableInteractionSource() }
-        Box(
-            Modifier
-                .heightIn(min = 40.dp)
-                .clip(CircleShape)
-                .background(palette.glass)
-                .border(1.dp, palette.cyan.copy(alpha = 0.25f), CircleShape)
-                .fusionInteractive(
-                    design = LocalFusionDesign.current,
-                    shape = CircleShape,
-                    interactionSource = interaction,
-                )
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    enabled = !loading,
-                    onClick = onRefresh,
-                )
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            Text(
-                if (loading) "SYNCING" else "REFRESH",
-                fontSize = 9.sp,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (loading) palette.cyan.copy(alpha = 0.5f) else palette.cyan,
             )
         }
     }
@@ -258,71 +199,14 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
 
 @Composable
 internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPeriod) -> Unit) {
-    val periods = StatisticsPeriod.entries
-    val shape = RoundedCornerShape(50)
     val palette = LocalFusionPalette.current
-    BoxWithConstraints(
-        Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(palette.glass)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f), shape)
-            .padding(4.dp),
-    ) {
-        val itemWidth = maxWidth / periods.size
-        val indicatorOffset by animateDpAsState(
-            targetValue = itemWidth * periods.indexOf(selected),
-            animationSpec = tween(380),
-            label = "period-pill",
-        )
-        Box(
-            Modifier
-                .offset(x = indicatorOffset)
-                .width(itemWidth)
-                .height(44.dp)
-                .clip(shape)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            SolarCyan.copy(alpha = 0.22f),
-                            SolarGreen.copy(alpha = 0.18f),
-                            SolarGold.copy(alpha = 0.20f),
-                        )
-                    )
-                )
-                .border(1.dp, SolarCyan.copy(alpha = 0.45f), shape),
-        )
-        Row(Modifier.fillMaxWidth()) {
-            periods.forEach { period ->
-                val active = period == selected
-                val interaction = remember { MutableInteractionSource() }
-                Box(
-                    Modifier
-                        .weight(1f)
-                        .heightIn(min = 44.dp)
-                        .clip(shape)
-                        .fusionInteractive(
-                            design = LocalFusionDesign.current,
-                            shape = shape,
-                            interactionSource = interaction,
-                        )
-                        .clickable(
-                            interactionSource = interaction,
-                            indication = null,
-                        ) { onSelect(period) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        period.chip,
-                        fontSize = 12.sp,
-                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                        color = if (active) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
+    FusionSegmentedControl(
+        options = StatisticsPeriod.entries,
+        selected = selected,
+        label = { it.chip },
+        onSelect = onSelect,
+        accent = palette.cyan,
+    )
 }
 
 @Composable
@@ -333,142 +217,93 @@ internal fun PeriodNavigator(
     onToday: (() -> Unit)? = null,
 ) {
     val palette = LocalFusionPalette.current
-    Row(
+    val design = LocalFusionDesign.current
+    val reduced = LocalFusionReducedMotion.current
+    val unit = when (period) {
+        StatisticsPeriod.DAY -> "day"
+        StatisticsPeriod.MONTH -> "month"
+        StatisticsPeriod.YEAR -> "year"
+        StatisticsPeriod.TOTAL -> "window"
+    }
+    Column(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(design.spacingXs),
     ) {
-        Text(
-            rangeLabel(period, anchorMillis),
-            modifier = Modifier.weight(1f, fill = false),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.width(8.dp))
         Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onToday != null) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = !isCurrentWindow(period, anchorMillis),
-                    enter = fadeIn(tween(220)) + scaleIn(tween(260), initialScale = 0.85f),
-                    exit = fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 0.85f),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        JumpToNowChip(
-                            label = currentWindowLabel(period),
-                            color = palette.cyan,
-                            onClick = onToday,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-                }
-            }
+            Text(
+                rangeLabel(period, anchorMillis),
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .semantics { heading() },
+                style = design.type.heading,
+                color = palette.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.width(design.spacingSm))
             if (period != StatisticsPeriod.TOTAL) {
-                NavArrow("‹") { onShift(-1) }
-                Spacer(Modifier.width(6.dp))
-                NavArrow("›", enabled = canNavigateForward(period, anchorMillis)) { onShift(1) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FusionIconButton(
+                        icon = FusionIcon.CHEVRON_LEFT,
+                        contentDescription = "Previous $unit",
+                        onClick = { onShift(-1) },
+                        tint = palette.cyan,
+                        borderColor = palette.border,
+                        iconSize = 20.dp,
+                    )
+                    Spacer(Modifier.width(design.spacingXs))
+                    FusionIconButton(
+                        icon = FusionIcon.CHEVRON_RIGHT,
+                        contentDescription = "Next $unit",
+                        onClick = { onShift(1) },
+                        enabled = canNavigateForward(period, anchorMillis),
+                        tint = palette.cyan,
+                        borderColor = palette.border,
+                        iconSize = 20.dp,
+                    )
+                }
             } else {
                 Text(
-                    "Lifecycle",
-                    fontSize = 10.sp,
-                    letterSpacing = 1.4.sp,
-                    fontWeight = FontWeight.Bold,
+                    "LIFECYCLE",
+                    style = design.type.labelMicro,
                     color = palette.gold,
+                )
+            }
+        }
+        if (onToday != null) {
+            AnimatedVisibility(
+                visible = !isCurrentWindow(period, anchorMillis),
+                enter = if (reduced) androidx.compose.animation.EnterTransition.None
+                else fadeIn() + scaleIn(initialScale = 0.9f),
+                exit = if (reduced) androidx.compose.animation.ExitTransition.None
+                else fadeOut() + scaleOut(targetScale = 0.9f),
+            ) {
+                FusionTextAction(
+                    text = "Jump to ${currentWindowLabel(period).lowercase()}",
+                    onClick = onToday,
+                    icon = FusionIcon.REFRESH,
+                    accent = palette.cyan,
                 )
             }
         }
     }
 }
 
-/** Small pill that resets the window back to today / this month / this year. */
-@Composable
-private fun JumpToNowChip(label: String, color: Color, onClick: () -> Unit) {
-    val palette = LocalFusionPalette.current
-    val design = LocalFusionDesign.current
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        Modifier
-            .heightIn(min = 40.dp)
-            .clip(CircleShape)
-            .background(palette.glass)
-            .border(1.dp, color.copy(alpha = 0.45f), CircleShape)
-            .fusionInteractive(design = design, shape = CircleShape, interactionSource = interaction)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            "↺ $label",
-            fontSize = 9.sp,
-            letterSpacing = 0.4.sp,
-            fontWeight = FontWeight.Bold,
-            color = color,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-private fun NavArrow(glyph: String, enabled: Boolean = true, onClick: () -> Unit) {
-    val palette = LocalFusionPalette.current
-    val design = LocalFusionDesign.current
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        Modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(if (enabled) palette.glassStrong else design.states.disabledContainer)
-            .border(
-                1.dp,
-                if (enabled) SolarCyan.copy(alpha = 0.30f) else Color.Transparent,
-                CircleShape,
-            )
-            .fusionInteractive(design = design, shape = CircleShape, interactionSource = interaction)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                enabled = enabled,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            glyph,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else design.states.disabledContent,
-        )
-    }
-}
-
 @Composable
 internal fun StatsErrorBanner(message: String, onRetry: () -> Unit) {
-    Card(
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                message,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onRetry) {
-                Text("RETRY", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
+    FusionBanner(
+        tone = FusionTone.DANGER,
+        title = "Analytics unavailable",
+        message = message,
+        actionLabel = "Retry",
+        onAction = onRetry,
+    )
 }
 
 @Composable
@@ -479,112 +314,65 @@ private fun HeroProduction(
     loading: Boolean,
 ) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     val value = snapshot?.headlineProduction
     val subtitle = productionWindowTitle(period, anchorMillis)
-    Box(
+    val shape = RoundedCornerShape(design.radiusHero)
+    Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(26.dp))
+            .clip(shape)
             .background(
                 Brush.linearGradient(
                     listOf(
-                        SolarCyan.copy(alpha = 0.16f),
-                        palette.surfaceHigh.copy(alpha = 0.75f),
-                        SolarGold.copy(alpha = 0.10f),
+                        palette.cyan.copy(alpha = 0.16f),
+                        palette.surfaceRaised,
+                        palette.gold.copy(alpha = 0.10f),
                     )
                 )
             )
-            .border(1.dp, SolarCyan.copy(alpha = 0.22f), RoundedCornerShape(26.dp))
-            .padding(20.dp),
+            .border(1.dp, palette.cyan.copy(alpha = 0.26f), shape)
+            .padding(design.spacingXl),
+        verticalArrangement = Arrangement.spacedBy(design.spacingXs),
     ) {
-        Column {
-            Text(
-                subtitle.uppercase(),
-                fontSize = 9.sp,
-                letterSpacing = 1.6.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = palette.cyan,
-            )
-            Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            subtitle.uppercase(),
+            style = design.type.labelMicro,
+            color = palette.cyan,
+        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            if (loading && value == null) {
+                FusionSkeleton(Modifier.width(150.dp).height(48.dp))
+            } else {
                 Text(
-                    value?.clean(1) ?: if (loading) "…" else "—",
-                    fontSize = 46.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = (-1.5).sp,
+                    value?.clean(1) ?: "—",
+                    style = design.type.display,
+                    color = palette.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 Text(
                     " kWh",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
+                    style = design.type.heading,
                     color = palette.gold,
-                    modifier = Modifier.padding(bottom = 9.dp),
+                    modifier = Modifier.padding(bottom = 9.dp, start = 4.dp),
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val peak = snapshot?.peak
-                Text(
-                    if (peak != null) "Peak ${peak.value.clean(1)} kWh · ${peak.label}" else "No buckets yet",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                snapshot?.balance?.totalProductPower?.let {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "·",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "server total ${parseNum(it)?.clean(1) ?: "—"}",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
-                }
             }
         }
-    }
-}
-
-@Composable
-private fun MiniStat(
-    label: String,
-    value: Double?,
-    unit: String,
-    accent: Color,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-    ) {
-        Column(Modifier.padding(12.dp)) {
+        Text(
+            snapshot?.peak?.let { peak ->
+                "Peak ${peak.value.clean(1)} ${if (period == StatisticsPeriod.DAY) "kW" else "kWh"} · ${peak.label}"
+            } ?: if (loading) "Loading this window…" else "No buckets recorded for this window",
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+        )
+        snapshot?.balance?.totalProductPower?.let {
             Text(
-                label.uppercase(),
-                fontSize = 8.5.sp,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
+                "Server total ${parseNum(it)?.clean(1) ?: "—"} kWh",
+                style = design.type.bodySmall,
+                color = palette.textTertiary,
             )
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    value?.clean(1) ?: "—",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = accent,
-                )
-                Text(
-                    " $unit",
-                    fontSize = 8.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 2.dp),
-                )
-            }
         }
     }
 }
@@ -598,93 +386,138 @@ private fun ChartCard(
     loading: Boolean,
     onExpand: () -> Unit,
 ) {
-    var mode by remember { androidx.compose.runtime.mutableStateOf(ChartMode.CURVE) }
+    var mode by remember { mutableStateOf(ChartMode.CURVE) }
     // Evidence: PhotovoltaicStatisticsViewModel.getLeftUnit — the day series is
     // instantaneous power (kW); month/year buckets are energy (kWh).
     val chartUnit = if (period == StatisticsPeriod.DAY) "kW" else "kWh"
     val palette = LocalFusionPalette.current
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text(
-                        if (period == StatisticsPeriod.DAY) "Power curve" else "Production profile",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
+    val design = LocalFusionDesign.current
+    val peak = production.maxByOrNull { it.value }?.takeIf { it.value > 0.0 }
+    val summary = if (production.isEmpty()) {
+        "No production recorded for this window."
+    } else {
+        "Production chart, ${production.size} buckets in $chartUnit. " +
+            "Highest ${peak?.value?.clean(1) ?: "0"} at ${peak?.label ?: "—"}."
+    }
+
+    FusionCard {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (period == StatisticsPeriod.DAY) "Power curve" else "Production profile",
+                    style = design.type.heading,
+                    color = palette.textPrimary,
+                )
+                Text(
+                    "${production.size} buckets · $chartUnit",
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(design.spacingSm)) {
+                if (mode == ChartMode.CURVE) {
+                    FusionIconButton(
+                        icon = FusionIcon.EXPAND,
+                        contentDescription = "Open chart in full screen",
+                        onClick = onExpand,
+                        tint = palette.cyan,
+                        container = palette.glass,
+                        borderColor = palette.border,
+                        iconSize = 16.dp,
                     )
-                    Text(
-                        "${production.size} buckets · $chartUnit",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ModeToggle(mode) { mode = it }
-                    if (mode == ChartMode.CURVE) ExpandButton(onExpand)
                 }
             }
-            Spacer(Modifier.height(10.dp))
+        }
 
-            when (mode) {
-                ChartMode.CURVE -> ProductionAreaChart(
+        FusionSegmentedControl(
+            options = ChartMode.entries,
+            selected = mode,
+            label = { it.label },
+            onSelect = { mode = it },
+            accent = palette.cyan,
+        )
+
+        when (mode) {
+            ChartMode.CURVE -> {
+                ProductionAreaChart(
                     points = production,
                     accent = palette.gold,
                     unit = chartUnit,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(210.dp),
+                        .height(220.dp)
+                        .semantics { contentDescription = summary },
                     emptyLabel = if (loading) "Loading production…" else "No production recorded for this window",
                 )
+                Text(
+                    summary,
+                    style = design.type.bodySmall,
+                    color = palette.textTertiary,
+                )
+            }
 
-                ChartMode.BARS -> {
-                    GroupedEnergyBars(
-                        primary = production,
-                        secondary = consumption,
-                        primaryColor = palette.gold,
-                        secondaryColor = palette.cyan,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(210.dp),
-                        emptyLabel = if (loading) "Loading production…" else "No series available",
+            ChartMode.BARS -> {
+                GroupedEnergyBars(
+                    primary = production,
+                    secondary = consumption,
+                    primaryColor = palette.gold,
+                    secondaryColor = palette.cyan,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .semantics {
+                            contentDescription = "Grouped bars comparing production and consumption " +
+                                "across ${production.size} buckets in $chartUnit"
+                        },
+                    emptyLabel = if (loading) "Loading production…" else "No series available",
+                )
+                LegendRow(
+                    listOf(
+                        "Production" to palette.gold,
+                        "Consumption" to palette.cyan,
                     )
-                    Spacer(Modifier.height(8.dp))
-                    LegendRow(
-                        listOf(
-                            "Production" to palette.gold,
-                            "Consumption" to palette.cyan,
-                        )
-                    )
-                }
+                )
+            }
 
-                ChartMode.MIX -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+            ChartMode.MIX -> {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val stacked = maxWidth < 360.dp
+                    val donut: @Composable () -> Unit = {
                         EnergyDonut(
                             segments = donutSegments(snapshot),
-                            modifier = Modifier.size(180.dp),
+                            modifier = Modifier.size(168.dp),
                             centerTitle = "Self-use",
                             centerValue = "${((snapshot?.selfConsumptionRate ?: 0.0) * 100).toInt()}%",
                             centerCaption = "of production",
                         )
-                        Spacer(Modifier.width(16.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    }
+                    val legend: @Composable () -> Unit = {
+                        Column(verticalArrangement = Arrangement.spacedBy(design.spacingSm)) {
                             LegendRow(donutSegments(snapshot).map { it.label to it.color }, vertical = true)
                             Text(
                                 "Self-sufficiency ${((snapshot?.selfSufficiency ?: 0.0) * 100).toInt()}%",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = design.type.bodySmall,
+                                color = palette.textSecondary,
                             )
+                        }
+                    }
+                    if (stacked) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(design.spacingMd),
+                        ) {
+                            donut()
+                            legend()
+                        }
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            donut()
+                            Spacer(Modifier.width(design.spacingLg))
+                            Box(Modifier.weight(1f)) { legend() }
                         }
                     }
                 }
@@ -694,82 +527,15 @@ private fun ChartCard(
 }
 
 @Composable
-private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
-    val palette = LocalFusionPalette.current
-    val design = LocalFusionDesign.current
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(50))
-            .background(palette.glass)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        ChartMode.entries.forEach { item ->
-            val active = item == mode
-            val interaction = remember { MutableInteractionSource() }
-            val background by animateColorAsState(
-                if (active) palette.cyan.copy(alpha = 0.20f) else Color.Transparent,
-                label = "mode-bg",
-            )
-            val textColor by animateColorAsState(
-                if (active) palette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
-                label = "mode-fg",
-            )
-            Box(
-                Modifier
-                    .clip(RoundedCornerShape(50))
-                    .background(background)
-                    .fusionInteractive(design = design, shape = RoundedCornerShape(50), interactionSource = interaction)
-                    .clickable(interactionSource = interaction, indication = null) { onChange(item) }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                Text(item.label, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-            }
-        }
-    }
-}
-
-/** Four corner brackets: opens the chart in full-screen landscape. */
-@Composable
-private fun ExpandButton(onClick: () -> Unit) {
-    val palette = LocalFusionPalette.current
-    val design = LocalFusionDesign.current
-    val interaction = remember { MutableInteractionSource() }
-    Box(
-        Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(palette.glass)
-            .border(1.dp, palette.cyan.copy(alpha = 0.25f), CircleShape)
-            .fusionInteractive(design = design, shape = CircleShape, interactionSource = interaction)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(Modifier.size(14.dp)) {
-            val stroke = 1.6.dp.toPx()
-            val len = size.minDimension * 0.38f
-            val w = size.width
-            val h = size.height
-            drawLine(palette.cyan, Offset(0f, len), Offset(0f, 0f), stroke)
-            drawLine(palette.cyan, Offset(0f, 0f), Offset(len, 0f), stroke)
-            drawLine(palette.cyan, Offset(w - len, 0f), Offset(w, 0f), stroke)
-            drawLine(palette.cyan, Offset(w, 0f), Offset(w, len), stroke)
-            drawLine(palette.cyan, Offset(0f, h - len), Offset(0f, h), stroke)
-            drawLine(palette.cyan, Offset(0f, h), Offset(len, h), stroke)
-            drawLine(palette.cyan, Offset(w - len, h), Offset(w, h), stroke)
-            drawLine(palette.cyan, Offset(w, h), Offset(w, h - len), stroke)
-        }
-    }
-}
-
-@Composable
 private fun LegendRow(items: List<Pair<String, Color>>, vertical: Boolean = false) {
+    val design = LocalFusionDesign.current
+    val palette = LocalFusionPalette.current
     if (vertical) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items.forEach { (label, color) -> LegendDot(label, color) }
         }
     } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(design.spacingLg)) {
             items.forEach { (label, color) -> LegendDot(label, color) }
         }
     }
@@ -777,10 +543,12 @@ private fun LegendRow(items: List<Pair<String, Color>>, vertical: Boolean = fals
 
 @Composable
 private fun LegendDot(label: String, color: Color) {
+    val design = LocalFusionDesign.current
+    val palette = LocalFusionPalette.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(7.dp).background(color, CircleShape))
-        Spacer(Modifier.width(5.dp))
-        Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box(Modifier.size(8.dp).background(color, RoundedCornerShape(2.dp)))
+        Spacer(Modifier.width(6.dp))
+        Text(label, style = design.type.bodySmall, color = palette.textSecondary)
     }
 }
 
@@ -798,21 +566,18 @@ private fun donutSegments(snapshot: StatisticsSnapshot?): List<DonutSegment> {
 
 @Composable
 private fun MixCard(snapshot: StatisticsSnapshot?, production: List<SeriesPoint>) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Energy balance", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Where the selected window's energy went",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+    val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    FusionCard {
+        Text("Energy balance", style = design.type.heading, color = palette.textPrimary)
+        Text(
+            "Where the selected window's energy went",
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+        )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val stacked = maxWidth < 360.dp
+            val donut: @Composable () -> Unit = {
                 EnergyDonut(
                     segments = donutSegments(snapshot),
                     modifier = Modifier.size(150.dp),
@@ -820,13 +585,14 @@ private fun MixCard(snapshot: StatisticsSnapshot?, production: List<SeriesPoint>
                     centerValue = "${((snapshot?.selfConsumptionRate ?: 0.0) * 100).toInt()}%",
                     centerCaption = "of production",
                 )
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            }
+            val detail: @Composable () -> Unit = {
+                Column(verticalArrangement = Arrangement.spacedBy(design.spacingSm)) {
                     RatioGauge(
                         ratio = (snapshot?.selfSufficiency ?: 0.0).toFloat(),
-                        color = LocalFusionPalette.current.green,
-                        caption = "self-sufficiency",
-                        modifier = Modifier.size(66.dp),
+                        color = palette.green,
+                        caption = "self-use",
+                        modifier = Modifier.size(72.dp),
                     )
                     Text(
                         if (production.isEmpty()) {
@@ -835,9 +601,24 @@ private fun MixCard(snapshot: StatisticsSnapshot?, production: List<SeriesPoint>
                             "${snapshot?.periodSelfUse?.clean(1) ?: "0"} kWh used on site, " +
                                 "${snapshot?.periodExport?.clean(1) ?: "0"} kWh exported."
                         },
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = design.type.bodySmall,
+                        color = palette.textSecondary,
                     )
+                }
+            }
+            if (stacked) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(design.spacingMd),
+                ) {
+                    donut()
+                    detail()
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    donut()
+                    Spacer(Modifier.width(design.spacingLg))
+                    Box(Modifier.weight(1f)) { detail() }
                 }
             }
         }
@@ -853,6 +634,7 @@ private fun BreakdownCard(
     gridImport: List<SeriesPoint>,
 ) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     val rows = listOf(
         Triple("PV production", snapshot?.periodProduction ?: 0.0, palette.gold),
         Triple("Consumption", snapshot?.periodConsumption ?: 0.0, palette.cyan),
@@ -862,52 +644,47 @@ private fun BreakdownCard(
         Triple("Battery discharged", snapshot?.discharge ?: 0.0, palette.batteryDischarge),
     )
     val maxValue = rows.maxOfOrNull { it.second } ?: 0.0
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Breakdown", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                "Totals for the selected window",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    FusionCard {
+        Text("Breakdown", style = design.type.heading, color = palette.textPrimary)
+        Text(
+            "Totals for the selected window",
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+        )
+        rows.forEach { (label, value, color) ->
+            MetricBar(
+                label = label,
+                value = value,
+                fraction = if (maxValue > 0.0) (value / maxValue).toFloat() else 0f,
+                color = color,
             )
-            Spacer(Modifier.height(8.dp))
-            rows.forEach { (label, value, color) ->
-                MetricBar(
-                    label = label,
-                    value = value,
-                    fraction = if (maxValue > 0.0) (value / maxValue).toFloat() else 0f,
-                    color = color,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                BucketChip("PV buckets", production.size)
-                BucketChip("Load buckets", consumption.size)
-                BucketChip("Export buckets", gridExport.count { it.value > 0.0 })
-                BucketChip("Import buckets", gridImport.count { it.value > 0.0 })
+        }
+        FusionDivider()
+        FusionGrid(itemCount = 4, minItemWidth = 140.dp, maxColumns = 4) { index, chipModifier ->
+            when (index) {
+                0 -> BucketChip("PV buckets", production.size, chipModifier)
+                1 -> BucketChip("Load buckets", consumption.size, chipModifier)
+                2 -> BucketChip("Export buckets", gridExport.count { it.value > 0.0 }, chipModifier)
+                else -> BucketChip("Import buckets", gridImport.count { it.value > 0.0 }, chipModifier)
             }
         }
     }
 }
 
 @Composable
-private fun BucketChip(label: String, count: Int) {
-    Column {
+private fun BucketChip(label: String, count: Int, modifier: Modifier = Modifier) {
+    val design = LocalFusionDesign.current
+    val palette = LocalFusionPalette.current
+    Column(modifier) {
         Text(
             count.toString(),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
+            style = design.type.numericSmall,
+            color = palette.textPrimary,
         )
         Text(
             label,
-            fontSize = 8.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
         )
     }
 }
@@ -915,86 +692,71 @@ private fun BucketChip(label: String, count: Int) {
 @Composable
 private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeriod) {
     val palette = LocalFusionPalette.current
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Highlights", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(10.dp))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HighlightTile(
+    val design = LocalFusionDesign.current
+    FusionCard {
+        Text("Highlights", style = design.type.heading, color = palette.textPrimary)
+        FusionGrid(itemCount = 4, minItemWidth = 140.dp) { index, tileModifier ->
+            when (index) {
+                0 -> HighlightTile(
                     label = if (period == StatisticsPeriod.DAY) "PEAK POWER" else "BEST BUCKET",
                     value = snapshot?.peak?.value?.clean(1) ?: "—",
                     caption = snapshot?.peak?.let {
                         if (period == StatisticsPeriod.DAY) "${it.label} · kW" else it.label
                     } ?: "no data",
                     accent = palette.gold,
-                    modifier = Modifier.weight(1f),
+                    modifier = tileModifier,
                 )
-                HighlightTile(
+                1 -> HighlightTile(
                     label = "AVERAGE",
                     value = snapshot?.average?.clean(1) ?: "—",
                     caption = "per active bucket",
                     accent = palette.cyan,
-                    modifier = Modifier.weight(1f),
+                    modifier = tileModifier,
                 )
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HighlightTile(
+                2 -> HighlightTile(
                     label = "BATTERY FLOW",
                     value = snapshot?.batteryCycles?.clean(1) ?: "—",
                     caption = "kWh cycled",
                     accent = palette.batteryCharge,
-                    modifier = Modifier.weight(1f),
+                    modifier = tileModifier,
                 )
-                HighlightTile(
+                else -> HighlightTile(
                     label = "SELF-SUFFICIENCY",
                     value = "${((snapshot?.selfSufficiency ?: 0.0) * 100).toInt()}%",
                     caption = "of consumption covered",
                     accent = palette.green,
-                    modifier = Modifier.weight(1f),
+                    modifier = tileModifier,
                 )
             }
+        }
 
-            snapshot?.kpi?.let { kpi ->
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(palette.glass)
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    KpiInline("Day", parseNum(kpi.dailyEnergy))
-                    KpiInline("Month", parseNum(kpi.monthEnergy))
-                    KpiInline("Year", parseNum(kpi.yearEnergy))
-                    KpiInline("Lifetime", parseNum(kpi.cumulativeEnergy))
+        snapshot?.kpi?.let { kpi ->
+            FusionDivider()
+            FusionGrid(itemCount = 4, minItemWidth = 130.dp, maxColumns = 4) { index, metricModifier ->
+                when (index) {
+                    0 -> FusionInlineMetric(
+                        label = "Day",
+                        value = parseNum(kpi.dailyEnergy)?.clean(1) ?: "—",
+                        modifier = metricModifier,
+                    )
+                    1 -> FusionInlineMetric(
+                        label = "Month",
+                        value = parseNum(kpi.monthEnergy)?.clean(1) ?: "—",
+                        modifier = metricModifier,
+                    )
+                    2 -> FusionInlineMetric(
+                        label = "Year",
+                        value = parseNum(kpi.yearEnergy)?.clean(1) ?: "—",
+                        modifier = metricModifier,
+                    )
+                    else -> FusionInlineMetric(
+                        label = "Lifetime",
+                        value = parseNum(kpi.cumulativeEnergy)?.clean(1) ?: "—",
+                        modifier = metricModifier,
+                    )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun KpiInline(label: String, value: Double?) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            value?.clean(1) ?: "—",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Text(
-            label,
-            fontSize = 8.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -1006,26 +768,26 @@ private fun HighlightTile(
     accent: Color,
     modifier: Modifier = Modifier,
 ) {
+    val design = LocalFusionDesign.current
+    val palette = LocalFusionPalette.current
     Column(
         modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(design.radiusMd))
             .background(accent.copy(alpha = 0.08f))
-            .border(1.dp, accent.copy(alpha = 0.18f), RoundedCornerShape(16.dp))
-            .padding(12.dp),
+            .border(1.dp, accent.copy(alpha = 0.20f), RoundedCornerShape(design.radiusMd))
+            .padding(design.spacingMd),
     ) {
         Text(
             label,
-            fontSize = 8.sp,
-            letterSpacing = 1.sp,
-            fontWeight = FontWeight.Bold,
+            style = design.type.labelMicro,
             color = accent,
         )
         Spacer(Modifier.height(3.dp))
-        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Text(value, style = design.type.numericSmall, color = palette.textPrimary)
         Text(
             caption,
-            fontSize = 8.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -1037,18 +799,19 @@ private fun StatsFooter(
     snapshot: StatisticsSnapshot?,
     lastUpdated: Long,
     diag: String?,
-    onRefresh: () -> Unit,
 ) {
+    val design = LocalFusionDesign.current
+    val palette = LocalFusionPalette.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!snapshot?.warnings.isNullOrEmpty()) {
             Text(
                 snapshot!!.warnings.joinToString(" · "),
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.error.copy(alpha = 0.75f),
+                style = design.type.bodySmall,
+                color = palette.danger,
             )
         }
         diag?.let {
-            Text(it, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            Text(it, style = design.type.bodySmall, color = palette.textTertiary)
         }
         Text(
             if (lastUpdated > 0) {
@@ -1057,8 +820,8 @@ private fun StatsFooter(
             } else {
                 "Waiting for first statistics update"
             },
-            fontSize = 9.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            style = design.type.bodySmall,
+            color = palette.textTertiary,
         )
     }
 }
@@ -1079,14 +842,16 @@ fun FullscreenChartScreen(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     val production = remember(snapshot) { snapshot?.production().orEmpty() }
     val chartUnit = if (period == StatisticsPeriod.DAY) "kW" else "kWh"
 
     Column(
         modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 22.dp, vertical = 14.dp),
+            .background(palette.surfaceBase)
+            .displayCutoutPadding()
+            .padding(horizontal = design.spacingXl, vertical = design.spacingLg),
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -1096,58 +861,48 @@ fun FullscreenChartScreen(
             Column(Modifier.weight(1f)) {
                 Text(
                     if (period == StatisticsPeriod.DAY) "POWER CURVE" else "PRODUCTION PROFILE",
-                    fontSize = 9.sp,
-                    letterSpacing = 2.2.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = design.type.labelMicro,
                     color = palette.cyan,
                 )
                 Text(
                     "$stationName · $range",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    style = design.type.heading,
+                    color = palette.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     "${production.size} buckets · $chartUnit",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
                 )
             }
-            Box(
-                Modifier
-                    .clip(CircleShape)
-                    .background(palette.glass)
-                    .border(1.dp, palette.cyan.copy(alpha = 0.30f), CircleShape)
-                    .clickable(onClick = onClose)
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-            ) {
-                Text(
-                    "CLOSE",
-                    fontSize = 9.sp,
-                    letterSpacing = 1.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.cyan,
-                )
-            }
+            FusionButton(
+                text = "Close",
+                onClick = onClose,
+                variant = FusionButtonVariant.SECONDARY,
+                icon = FusionIcon.CLOSE,
+            )
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(design.spacingMd))
         ProductionAreaChart(
             points = production,
             accent = palette.gold,
             unit = chartUnit,
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f),
+                .weight(1f)
+                .semantics {
+                    contentDescription = "Full screen production curve with ${production.size} buckets"
+                },
             emptyLabel = if (loading) "Loading production…" else "No production recorded for this window",
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(design.spacingSm))
         Text(
-            "Tap the curve to inspect a bucket · rotate back or tap CLOSE to return",
-            fontSize = 9.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            "Tap the curve to inspect a bucket · rotate back or tap Close to return",
+            style = design.type.bodySmall,
+            color = palette.textTertiary,
         )
     }
 }

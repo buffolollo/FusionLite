@@ -1,35 +1,44 @@
 package com.fusionlite.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +51,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Account / workspace tab: plant identity, plant switching, appearance,
+ * refresh cadence, connection diagnostics and sign-out.
+ *
+ * Destructive sign-out is confirmed in a dialog; plant switching uses a real
+ * radio group (selected state is announced, not implied by colour alone).
+ */
 @Composable
 fun AccountScreen(
     state: UiState,
@@ -57,77 +73,224 @@ fun AccountScreen(
     val metrics = StationMetrics.from(station)
     val session = state.session
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    var confirmSignOut by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(2500)
+            copied = false
+        }
+    }
+
+    if (confirmSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            title = { Text("Sign out of FusionLite?", style = design.type.heading) },
+            text = {
+                Text(
+                    "The saved session and encrypted password will be removed from this device. " +
+                        "Your plant keeps running; you can sign back in any time.",
+                    style = design.type.body,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmSignOut = false
+                        onLogout()
+                    },
+                ) {
+                    Text("Sign out", color = palette.danger, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSignOut = false }) {
+                    Text("Stay signed in", color = palette.cyan)
+                }
+            },
+            containerColor = palette.surfaceRaised,
+            titleContentColor = palette.textPrimary,
+            textContentColor = palette.textSecondary,
+        )
+    }
+
+    FusionPage(modifier = modifier, bottomPadding = design.navClearance) {
         item {
-            Column {
-                Text(
-                    "WORKSPACE",
-                    fontSize = 9.sp,
-                    letterSpacing = 2.2.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.green,
-                )
-                Text(
-                    station?.name ?: "Solar plant",
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            FusionScreenHeader(
+                eyebrow = "Workspace",
+                title = "Account",
+                accent = palette.green,
+                trailing = {
+                    FusionIconButton(
+                        icon = FusionIcon.REFRESH,
+                        contentDescription = "Refresh plant data",
+                        onClick = onRefresh,
+                        enabled = !state.loading,
+                        tint = palette.cyan,
+                        borderColor = palette.border,
+                        spinning = state.loading,
+                    )
+                },
+            )
         }
 
         item {
-            InfoCard("Plant details") {
-                InfoRow("Data source", session?.let { "${it.host}:${it.port}" } ?: "—")
-                InfoRow("Station DN", station?.dn ?: "—")
-                InfoRow("Installed capacity", metrics.capacity?.let { "${it.clean(1)} kWp" } ?: "—")
-                InfoRow("Current power", metrics.currentPower?.let { "${it.clean(2)} kW" } ?: "—")
-                InfoRow("Lifetime energy", metrics.cumulativeEnergy?.let { "${it.clean(1)} kWh" } ?: "—")
+            FusionCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .background(palette.green.copy(alpha = 0.14f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FusionIcon(FusionIcon.PANEL, size = 22.dp, tint = palette.green)
+                    }
+                    Spacer(Modifier.width(design.spacingMd))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            station?.name ?: "Solar plant",
+                            style = design.type.heading,
+                            color = palette.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.semantics { heading() },
+                        )
+                        Text(
+                            station?.plantStatus ?: "Plant status unavailable",
+                            style = design.type.bodySmall,
+                            color = palette.textSecondary,
+                        )
+                    }
+                    FusionStatusPill(
+                        label = if (state.loggedIn) "Signed in" else "Signed out",
+                        tone = if (state.loggedIn) FusionTone.SUCCESS else FusionTone.NEUTRAL,
+                    )
+                }
+                FusionDivider()
+                FusionKeyValueRow("Data source", session?.let { "${it.host}:${it.port}" } ?: "—")
+                FusionKeyValueRow(
+                    "Installed capacity",
+                    metrics.capacity?.let { "${it.clean(1)} kWp" } ?: "—",
+                )
+                FusionKeyValueRow(
+                    "Current power",
+                    metrics.currentPower?.let { "${it.clean(2)} kW" } ?: "—",
+                )
+                FusionKeyValueRow(
+                    "Lifetime energy",
+                    metrics.cumulativeEnergy?.let { "${it.clean(1)} kWh" } ?: "—",
+                )
+                if (station?.dn != null) {
+                    val stationDn = station.dn
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Station DN", style = design.type.bodySmall, color = palette.textSecondary)
+                            Text(
+                                stationDn,
+                                style = design.type.bodySmall,
+                                color = palette.textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        FusionIconButton(
+                            icon = FusionIcon.COPY,
+                            contentDescription = "Copy station identifier",
+                            onClick = {
+                                clipboard.setText(AnnotatedString(stationDn))
+                                copied = true
+                            },
+                            tint = palette.cyan,
+                            container = Color.Transparent,
+                            iconSize = 18.dp,
+                        )
+                    }
+                    if (copied) {
+                        Text(
+                            "Station identifier copied to clipboard.",
+                            style = design.type.bodySmall,
+                            color = palette.green,
+                            modifier = Modifier.semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        )
+                    }
+                }
             }
         }
 
         if (state.stations.size > 1) {
             item {
-                InfoCard("Switch plant") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        state.stations.chunked(2).forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                row.forEach { s ->
-                                    val selected = s.dn == state.selectedDn
-                                    Box(
-                                        Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(
-                                                if (selected) palette.green.copy(alpha = 0.16f)
-                                                else palette.glass
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (selected) palette.green.copy(alpha = 0.5f) else Color.Transparent,
-                                                RoundedCornerShape(14.dp),
-                                            )
-                                            .clickable { s.dn?.let(onSelectStation) }
-                                            .padding(horizontal = 10.dp, vertical = 9.dp),
-                                    ) {
-                                        Text(
-                                            s.name ?: s.dn ?: "Plant",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (selected) palette.green else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                FusionCard {
+                    Text("Switch plant", style = design.type.heading, color = palette.textPrimary)
+                    Text(
+                        "Only one plant is shown at a time. Selecting another reloads live data.",
+                        style = design.type.bodySmall,
+                        color = palette.textSecondary,
+                    )
+                    Column(
+                        Modifier.selectableGroup(),
+                        verticalArrangement = Arrangement.spacedBy(design.spacingSm),
+                    ) {
+                        state.stations.forEach { s ->
+                            val selected = s.dn == state.selectedDn
+                            val name = s.name ?: s.dn ?: "Plant"
+                            val shape = RoundedCornerShape(design.radiusMd)
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .clip(shape)
+                                    .background(
+                                        if (selected) palette.green.copy(alpha = 0.10f) else palette.glass,
+                                        shape,
+                                    )
+                                    .border(
+                                        1.dp,
+                                        if (selected) palette.green.copy(alpha = 0.45f) else Color.Transparent,
+                                        shape,
+                                    )
+                                    .selectable(
+                                        selected = selected,
+                                        role = Role.RadioButton,
+                                        onClick = { s.dn?.let(onSelectStation) },
+                                    )
+                                    .padding(horizontal = design.spacingMd, vertical = design.spacingSm),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(20.dp)
+                                        .border(
+                                            2.dp,
+                                            if (selected) palette.green else palette.borderStrong,
+                                            CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (selected) {
+                                        Box(
+                                            Modifier
+                                                .size(10.dp)
+                                                .background(palette.green, CircleShape)
                                         )
                                     }
                                 }
-                                if (row.size == 1) Spacer(Modifier.weight(1f))
+                                Spacer(Modifier.width(design.spacingMd))
+                                Text(
+                                    name,
+                                    style = design.type.label,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (selected) palette.textPrimary else palette.textSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }
@@ -136,156 +299,121 @@ fun AccountScreen(
         }
 
         item {
-            InfoCard("Appearance") {
+            FusionCard {
+                Text("Appearance", style = design.type.heading, color = palette.textPrimary)
+                FusionSettingRow(
+                    title = themeMode.label,
+                    subtitle = themeMode.caption(),
+                ) {
+                    ThemeToggle(mode = themeMode, onMode = onThemeMode)
+                }
+                if (themeMode.isExplicit) {
+                    FusionButton(
+                        text = "Follow the phone instead",
+                        onClick = { onThemeMode(ThemeMode.SYSTEM) },
+                        variant = FusionButtonVariant.GHOST,
+                        accent = palette.cyan,
+                        icon = FusionIcon.SUN,
+                    )
+                }
+            }
+        }
+
+        item {
+            FusionCard {
+                Text("Refresh cadence", style = design.type.heading, color = palette.textPrimary)
+                Text(
+                    "Historical data is loaded when you open a tab; live telemetry follows this cadence.",
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
+                )
+                FusionSegmentedControl(
+                    options = listOf(15, 30, 60),
+                    selected = state.refreshIntervalSeconds,
+                    label = { "${it}s" },
+                    onSelect = onIntervalChange,
+                    accent = palette.cyan,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(design.spacingSm)) {
+                    FusionButton(
+                        text = "Refresh now",
+                        onClick = onRefresh,
+                        variant = FusionButtonVariant.SECONDARY,
+                        icon = FusionIcon.REFRESH,
+                        enabled = !state.loading,
+                    )
+                }
+            }
+        }
+
+        item {
+            FusionCard {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            themeMode.label,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            themeMode.caption(),
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    ThemeToggle(mode = themeMode, onMode = onThemeMode)
+                    Text("Connection", style = design.type.heading, color = palette.textPrimary)
+                    FusionStatusPill(
+                        label = if (state.error == null && state.loggedIn) "Healthy" else "Attention",
+                        tone = if (state.error == null && state.loggedIn) {
+                            FusionTone.SUCCESS
+                        } else {
+                            FusionTone.WARNING
+                        },
+                    )
                 }
-                if (themeMode.isExplicit) {
-                    TextButton(
-                        onClick = { onThemeMode(ThemeMode.SYSTEM) },
-                        contentPadding = PaddingValues(0.dp),
-                    ) {
-                        Text("Follow the phone instead", fontSize = 11.sp, color = palette.cyan)
-                    }
-                }
-            }
-        }
-
-        item {
-            InfoCard("Auto refresh") {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    listOf(15, 30, 60).forEach { seconds ->
-                        val selected = state.refreshIntervalSeconds == seconds
-                        Box(
-                            Modifier
-                                .clip(CircleShape)
-                                .background(
-                                    if (selected) palette.cyan.copy(alpha = 0.18f)
-                                    else palette.glass
-                                )
-                                .border(
-                                    1.dp,
-                                    if (selected) palette.cyan.copy(alpha = 0.55f) else Color.Transparent,
-                                    CircleShape,
-                                )
-                                .clickable { onIntervalChange(seconds) }
-                                .padding(horizontal = 14.dp, vertical = 7.dp),
-                        ) {
-                            Text(
-                                "${seconds}s",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selected) palette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PillButton("Refresh now", palette.cyan, onRefresh)
-                    TextButton(onClick = onLogout) {
-                        Text("Sign out", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
-
-        item {
-            InfoCard("Connection") {
-                InfoRow("Status", if (state.loggedIn) "Signed in" else "Signed out")
-                InfoRow(
+                FusionKeyValueRow(
                     "Last update",
                     if (state.lastUpdated > 0) {
-                        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(state.lastUpdated))
+                        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                            .format(Date(state.lastUpdated))
                     } else {
                         "—"
                     },
                 )
-                InfoRow("Diagnostics", state.diag ?: "—")
-                state.flowError?.let { InfoRow("Flow warning", it) }
+                FusionKeyValueRow("Diagnostics", state.diag ?: "—")
+                state.error?.let { FusionKeyValueRow("Live error", it, valueColor = palette.danger) }
+                state.flowError?.let { FusionKeyValueRow("Flow warning", it, valueColor = palette.warning) }
             }
         }
 
         item {
-            Text(
-                "Statistics endpoints reverse-engineered from com.huawei.smartpvms 26.2.6.001: " +
-                    "station-real-kpi + energy-balance v1/v2. Chart filters use StatDim " +
-                    "2/4/5/6 and send the same stationDn, dateStr, queryTime and timeZone " +
-                    "keys as the shipped app.",
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-            )
+            FusionCard {
+                Text("Session", style = design.type.heading, color = palette.textPrimary)
+                Text(
+                    "Signing out clears the encrypted password and all tokens stored on this device.",
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
+                )
+                FusionButton(
+                    text = "Sign out",
+                    onClick = { confirmSignOut = true },
+                    variant = FusionButtonVariant.DANGER,
+                    icon = FusionIcon.ARROW_UP_RIGHT,
+                    fillWidth = true,
+                )
+            }
         }
-    }
-}
 
-@Composable
-private fun InfoCard(title: String, content: @Composable () -> Unit) {
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            content()
+        item {
+            FusionCard {
+                Text("About this build", style = design.type.heading, color = palette.textPrimary)
+                Text(
+                    "Statistics endpoints reverse-engineered from com.huawei.smartpvms " +
+                        "26.2.6.001: station-real-kpi plus energy-balance v1/v2. Chart filters " +
+                        "use StatDim 2/4/5/6 and send the same stationDn, dateStr, queryTime and " +
+                        "timeZone keys as the shipped app.",
+                    style = design.type.bodySmall,
+                    color = palette.textTertiary,
+                )
+                Text(
+                    "Tokens, component states and contrast results: " +
+                        "design-system/fusionlite/ACCESSIBILITY.md",
+                    style = design.type.bodySmall,
+                    color = palette.textTertiary,
+                )
+            }
         }
-    }
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(
-            label,
-            fontSize = 10.5.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            value,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-    }
-}
-
-@Composable
-private fun PillButton(text: String, color: Color, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.14f))
-            .border(1.dp, color.copy(alpha = 0.4f), CircleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-    ) {
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = color)
     }
 }

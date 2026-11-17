@@ -1,45 +1,69 @@
 package com.fusionlite.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fusionlite.api.FusionSolarConfig
 import com.fusionlite.data.ThemeMode
 
+/**
+ * Sign-in screen.
+ *
+ * Accessibility decisions:
+ * - the submit button stays enabled (unless a request is in flight) so a blank
+ *   form can explain itself with inline errors instead of silently refusing;
+ * - a failed sign-in renders an assertive live-region banner and moves focus
+ *   to it, so the error is announced and reachable by keyboard;
+ * - password has a labelled show/hide toggle with a 48dp target;
+ * - server settings are an explicit switch, not an unlabeled tap target.
+ */
 @Composable
 fun LoginScreen(
     user: String,
@@ -58,167 +82,295 @@ fun LoginScreen(
     modifier: Modifier = Modifier,
 ) {
     var advanced by remember { mutableStateOf(false) }
+    var showPassword by remember { mutableStateOf(false) }
+    var attempted by remember { mutableStateOf(false) }
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val focusManager = LocalFocusManager.current
+    val passwordFocus = remember { FocusRequester() }
+    val userFocus = remember { FocusRequester() }
+    val hostFocus = remember { FocusRequester() }
+    val errorFocus = remember { FocusRequester() }
+    val errorInteraction = remember { MutableInteractionSource() }
 
-    Box(
+    val userError = if (attempted && user.isBlank()) "Enter your FusionSolar username." else null
+    val passError = if (attempted && pass.isBlank()) "Enter your password." else null
+    val hostError = if (advanced && host.isBlank()) "Enter the server host." else null
+
+    fun submit() {
+        attempted = true
+        when {
+            user.isBlank() -> {
+                userFocus.requestFocus()
+                return
+            }
+            pass.isBlank() -> {
+                passwordFocus.requestFocus()
+                return
+            }
+            advanced && host.isBlank() -> {
+                hostFocus.requestFocus()
+                return
+            }
+        }
+        focusManager.clearFocus()
+        onLogin()
+    }
+
+    LaunchedEffect(message) {
+        if (message != null) {
+            runCatching { errorFocus.requestFocus() }
+        }
+    }
+
+    BoxWithConstraints(
         modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(palette.loginGradient)
-            )
+            .background(Brush.verticalGradient(palette.loginGradient)),
     ) {
+        val gutter = design.gutterFor(maxWidth)
         SolarPanelScene(
             powerFraction = 0.55f,
             showHouse = false,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(300.dp),
+                .height(340.dp),
         )
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 22.dp, vertical = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(horizontal = gutter, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(160.dp))
-            Text(
-                "FusionLite",
-                fontSize = 34.sp,
-                fontWeight = FontWeight.Bold,
-                color = palette.loginTitle,
-            )
-            Text(
-                "Your solar plant, live and beautifully simple.",
-                fontSize = 13.sp,
-                color = palette.loginSubtitle,
-            )
-            Spacer(Modifier.height(6.dp))
-
-            Card(
-                shape = RoundedCornerShape(26.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                modifier = Modifier.fillMaxWidth(),
+            Spacer(Modifier.height(120.dp))
+            Column(
+                Modifier.widthIn(max = 460.dp),
+                verticalArrangement = Arrangement.spacedBy(design.spacingMd),
             ) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .background(palette.gold.copy(alpha = 0.16f), CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FusionIcon(FusionIcon.SUN, size = 24.dp, tint = palette.gold)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "FUSIONLITE",
+                        style = design.type.labelMicro,
+                        color = palette.cyan,
+                        letterSpacing = 2.4.sp,
+                    )
+                }
+                Text(
+                    "Your solar plant,\nlive and simple.",
+                    style = design.type.displaySmall,
+                    color = palette.loginTitle,
+                    modifier = Modifier.semantics { heading() },
+                )
+                Text(
+                    "Sign in with the same account you use in the FusionSolar app. " +
+                        "The session stays on this device.",
+                    style = design.type.body,
+                    color = palette.loginSubtitle,
+                )
+
+                FusionCard(
+                    padding = design.spacingXl,
+                    accent = palette.borderStrong,
+                ) {
                     Text(
                         "SIGN IN",
-                        fontSize = 10.sp,
-                        letterSpacing = 2.sp,
-                        fontWeight = FontWeight.Bold,
+                        style = design.type.labelMicro,
                         color = palette.cyan,
                     )
-                    OutlinedTextField(
+
+                    if (message != null) {
+                        FusionBanner(
+                            tone = FusionTone.DANGER,
+                            title = "Could not sign in",
+                            message = message,
+                            modifier = Modifier
+                                .focusRequester(errorFocus)
+                                .focusable(interactionSource = errorInteraction)
+                                .fusionInteractive(
+                                    design = design,
+                                    shape = RoundedCornerShape(design.radiusLg),
+                                    interactionSource = errorInteraction,
+                                ),
+                        )
+                    }
+
+                    FusionTextField(
                         value = user,
                         onValueChange = onUser,
-                        label = { Text("Username") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        modifier = Modifier.fillMaxWidth(),
+                        label = "Username",
+                        placeholder = "name@example.com",
+                        leadingIcon = FusionIcon.USER,
+                        enabled = !loading,
+                        error = userError,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { passwordFocus.requestFocus() },
+                        ),
+                        accent = palette.cyan,
+                        modifier = Modifier.focusRequester(userFocus),
                     )
-                    OutlinedTextField(
+
+                    FusionTextField(
                         value = pass,
                         onValueChange = onPass,
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        modifier = Modifier.fillMaxWidth(),
+                        label = "Password",
+                        leadingIcon = FusionIcon.LOCK,
+                        enabled = !loading,
+                        error = passError,
+                        visualTransformation = if (showPassword) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        trailingIcon = {
+                            FusionIconButton(
+                                icon = if (showPassword) FusionIcon.EYE_OFF else FusionIcon.EYE,
+                                contentDescription = if (showPassword) "Hide password" else "Show password",
+                                onClick = { showPassword = !showPassword },
+                                container = Color.Transparent,
+                                tint = palette.textTertiary,
+                                iconSize = 18.dp,
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                focusManager.clearFocus()
+                                submit()
+                            },
+                        ),
+                        accent = palette.cyan,
+                        modifier = Modifier.focusRequester(passwordFocus),
                     )
 
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { advanced = !advanced }
-                            .padding(vertical = 2.dp),
+                            .toggleable(
+                                value = advanced,
+                                role = Role.Switch,
+                                onValueChange = { advanced = it },
+                            )
+                            .semantics {
+                                stateDescription = if (advanced) {
+                                    "Server settings expanded"
+                                } else {
+                                    "Server settings collapsed"
+                                }
+                            }
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "Server settings",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            if (advanced) "hide ▲" else "show ▼",
-                            fontSize = 11.sp,
-                            color = palette.cyan,
+                        Column {
+                            Text(
+                                "Server settings",
+                                style = design.type.label,
+                                color = palette.textPrimary,
+                            )
+                            Text(
+                                "${FusionSolarConfig.DEFAULT_HOST}",
+                                style = design.type.bodySmall,
+                                color = palette.textTertiary,
+                            )
+                        }
+                        FusionIcon(
+                            if (advanced) FusionIcon.CHEVRON_UP else FusionIcon.CHEVRON_DOWN,
+                            size = 18.dp,
+                            tint = palette.cyan,
                         )
                     }
+
                     if (advanced) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
+                        Row(horizontalArrangement = Arrangement.spacedBy(design.spacingSm)) {
+                            FusionTextField(
                                 value = host,
                                 onValueChange = onHost,
-                                label = { Text("Host") },
-                                singleLine = true,
-                                modifier = Modifier.weight(2.4f),
+                                label = "Host",
+                                enabled = !loading,
+                                error = hostError,
+                                leadingIcon = FusionIcon.SERVER,
+                                modifier = Modifier
+                                    .weight(2.2f)
+                                    .focusRequester(hostFocus),
+                                accent = palette.cyan,
                             )
-                            OutlinedTextField(
+                            FusionTextField(
                                 value = port,
                                 onValueChange = onPort,
-                                label = { Text("Port") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                label = "Port",
+                                enabled = !loading,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done,
+                                ),
                                 modifier = Modifier.weight(1f),
+                                accent = palette.cyan,
                             )
                         }
                     }
 
-                    val scheme = MaterialTheme.colorScheme
-                    Button(
-                        onClick = onLogin,
-                        enabled = !loading && user.isNotBlank() && pass.isNotBlank(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = scheme.primary,
-                            contentColor = scheme.onPrimary,
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
-                    ) {
-                        if (loading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.height(20.dp),
-                                strokeWidth = 2.dp,
-                                color = scheme.onPrimary,
-                            )
-                            Spacer(Modifier.height(0.dp))
-                        } else {
-                            Text("Sign in", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        }
-                    }
-
-                    message?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                    }
-
-                    Text(
-                        "Credentials and session are stored only on this device " +
-                            "(password encrypted with Android Keystore).",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                    FusionButton(
+                        text = if (loading) "Signing in…" else "Sign in",
+                        onClick = { submit() },
+                        loading = loading,
+                        enabled = !loading,
+                        fillWidth = true,
+                        icon = FusionIcon.LOCK,
                     )
+
+                    Row(verticalAlignment = Alignment.Top) {
+                        FusionIcon(
+                            FusionIcon.LOCK,
+                            size = 13.dp,
+                            tint = palette.textTertiary,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                        Text(
+                            "Credentials never leave this device except in the login request. " +
+                                "The password is encrypted with the Android Keystore.",
+                            style = design.type.bodySmall,
+                            color = palette.textTertiary,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
+                    }
                 }
+
+                Text(
+                    "Default server ${FusionSolarConfig.DEFAULT_HOST}:${FusionSolarConfig.DEFAULT_PORT}",
+                    style = design.type.bodySmall,
+                    color = palette.textTertiary,
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(24.dp))
             }
-            Text(
-                "Default server: ${FusionSolarConfig.DEFAULT_HOST}:${FusionSolarConfig.DEFAULT_PORT}",
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            )
         }
-        // Drawn after the scroll column so it stays above the content and
-        // remains tappable.
-        ThemeToggle(
-            mode = themeMode,
-            onMode = onThemeMode,
-            modifier = Modifier
+        Box(
+            Modifier
                 .align(Alignment.TopEnd)
-                .padding(22.dp),
-        )
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+        ) {
+            ThemeToggle(mode = themeMode, onMode = onThemeMode)
+        }
     }
 }

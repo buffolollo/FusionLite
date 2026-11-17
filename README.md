@@ -133,11 +133,52 @@ pick Day/Month/Year/Total, and the page shows consumption cost, grid-import
 cost, export revenue, self-consumption savings and the net bill. Prices are
 stored locally (`data/Tariffs.kt`, SharedPreferences) and are never uploaded.
 
-A liquid bottom navigation bar (`ui/LiquidNavBar.kt`) now floats over the shell
-with four destinations: Home, Analytics, Costs and Account. Its selected pill is a
-spring-driven, bezier-wobbling blob that stretches/squashes while travelling,
+A liquid bottom navigation bar (`ui/LiquidNavBar.kt`) floats over the shell
+with four destinations: Home, Analytics, Costs and Account. Its selected pill is
+a spring-driven, bezier-wobbling blob that stretches/squashes while travelling,
 throws two satellite droplets and blends its gradient between SolarGold,
-SolarCyan and SolarGreen.
+SolarCyan and SolarGreen. It is a `selectableGroup` of `Role.Tab` items with a
+48dp target per destination, and it freezes into a static pill when the phone
+asks for reduced motion.
+
+### Design system, components and accessibility
+
+The UI is built from a three-layer token system:
+
+- **Primitives** — raw solar/night constants in `ui/Theme.kt` (artwork only).
+- **Semantic palette** — one `FusionPalette` instance per theme with
+  `textPrimary/Secondary/Tertiary`, `surfaceBase/Raised/Sunken`, `border`,
+  `borderStrong`, `focusRing`, status roles and ornament colours. Every slot is
+  linearly blended through one `animateFloatAsState`, so light ↔ dark has no
+  intermediate contrast frame and no flash behind the window.
+- **Geometry + motion** — `ui/FusionTokens.kt` carries the 4/8dp spacing rhythm,
+  radii, elevation, motion timings and the shared press/focus recipe.
+
+`ui/Components.kt` is the component library every screen uses: `FusionCard`,
+`FusionButton` (primary/secondary/ghost/danger, loading + disabled states),
+`FusionIconButton`, `FusionChip`, `FusionSegmentedControl`, `FusionTextField`,
+`FusionBanner` (live regions), `FusionStatTile`, `FusionSkeleton`,
+`FusionEmptyState`, `FusionSectionHeader` and key/value rows. `ui/Icons.kt`
+draws a single 24×24 vector icon family — no emoji and no icon-font
+dependency. `ui/Adaptive.kt` provides the mobile-first page frame (16/24/32dp
+gutters, 760dp measure cap) and the adaptive KPI grid.
+
+Accessibility is treated as a build requirement, not a polish pass:
+
+- 48dp minimum targets, visible 2dp focus rings on every interactive surface,
+  and no layout shift on press/hover.
+- Semantic roles: radio groups for plants and segmented filters, `Role.Tab`
+  for bottom navigation, `Role.Switch` for the theme toggle, labelled icon
+  buttons, `progressSemantics` for gauges/bars and chart summaries for
+  screen readers (including next/previous data-point accessibility actions).
+- Contrast is audited: body text ≥ 9:1 in both themes, tertiary text ≥ 5.7:1,
+  accents ≥ 5.1:1, interactive borders ≥ 3:1. The full table and the re-runnable
+  audit live in `design-system/fusionlite/ACCESSIBILITY.md`.
+- Reduced motion (`animator_duration_scale = 0`) disables the theme blend,
+  nav wobble, chart reveals, skeleton pulse, hero/flow animation and screen
+  transitions.
+- Errors are announced through an assertive live region and receive focus on
+  the login screen; inline field errors stay attached to their field.
 
 ### Theme (white / dark / follow system)
 
@@ -161,8 +202,8 @@ The **Analytics** tab (`ui/StatisticsScreen.kt`, `ui/StatisticsCharts.kt`) is a
 custom statistics dashboard:
 
 - Day / Month / Year / Total period pill with ‹ › window navigation.
-- A small “↺ Today / This month / This year” chip appears whenever the
-  selected window has moved away from the current one and jumps back to it.
+- A small “Jump to today / this month / this year” button appears whenever the
+  selected window has moved away from the current one and returns to it.
 - Hero production total, peak, server total and three mini KPIs. The headline
   is the energy-balance `totalProductPower` for the *selected* window, so it
   follows the arrows instead of staying on today's value; the caption names the

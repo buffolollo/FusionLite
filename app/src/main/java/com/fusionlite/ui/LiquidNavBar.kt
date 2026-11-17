@@ -6,12 +6,12 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,10 +20,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -40,6 +41,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,8 +65,11 @@ enum class AppTab(val label: String) {
  *
  * The selected pill is an [Animatable] position; while it travels it stretches
  * horizontally and squashes vertically, and its bezier edges wobble with an
- * infinite phase so the highlight behaves like a drop of liquid. Two smaller
- * satellite droplets are thrown out behind it.
+ * infinite phase so the highlight behaves like a drop of liquid. With reduced
+ * motion enabled the blob jumps straight to its destination and stops wobbling.
+ *
+ * Semantics: the row is a `selectableGroup`, each destination is a
+ * `Role.Tab` with a selected state, and the whole 74dp bar is the touch target.
  */
 @Composable
 fun LiquidBottomBar(
@@ -73,6 +80,9 @@ fun LiquidBottomBar(
     val items = AppTab.entries
     val target = items.indexOf(selected).toFloat()
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val reduced = LocalFusionReducedMotion.current
+    val haptics = LocalHapticFeedback.current
     val position = remember { Animatable(target) }
     val transition = rememberInfiniteTransition(label = "liquid-nav")
     val phase by transition.animateFloat(
@@ -88,21 +98,25 @@ fun LiquidBottomBar(
         label = "drift",
     )
 
-    LaunchedEffect(target) {
-        position.animateTo(
-            targetValue = target,
-            animationSpec = spring(
-                dampingRatio = 0.62f,
-                stiffness = Spring.StiffnessLow,
-            ),
-        )
+    LaunchedEffect(target, reduced) {
+        if (reduced) {
+            position.snapTo(target)
+        } else {
+            position.animateTo(
+                targetValue = target,
+                animationSpec = spring(
+                    dampingRatio = 0.62f,
+                    stiffness = Spring.StiffnessLow,
+                ),
+            )
+        }
     }
 
     val shape = RoundedCornerShape(30.dp)
     Box(
         modifier
             .fillMaxWidth()
-            .height(74.dp)
+            .height(76.dp)
             .clip(shape)
             .background(
                 Brush.verticalGradient(
@@ -116,24 +130,39 @@ fun LiquidBottomBar(
                 1.dp,
                 Brush.linearGradient(
                     listOf(
-                        SolarCyan.copy(alpha = 0.30f),
-                        SolarGold.copy(alpha = 0.16f),
-                        SolarGreen.copy(alpha = 0.26f),
+                        palette.cyan.copy(alpha = 0.30f),
+                        palette.gold.copy(alpha = 0.16f),
+                        palette.green.copy(alpha = 0.26f),
                     )
                 ),
                 shape,
             ),
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            drawLiquidLayer(position.value, phase, drift, items.size, palette)
+            drawLiquidLayer(
+                pos = position.value,
+                phase = if (reduced) 0f else phase,
+                drift = if (reduced) 0f else drift,
+                count = items.size,
+                palette = palette,
+            )
         }
 
-        Row(Modifier.fillMaxSize()) {
-            items.forEachIndexed { index, tab ->
+        Row(
+            Modifier
+                .fillMaxSize()
+                .selectableGroup(),
+        ) {
+            items.forEach { tab ->
                 LiquidNavItem(
                     tab = tab,
                     selected = tab == selected,
-                    onClick = { if (tab != selected) onSelect(tab) },
+                    onClick = {
+                        if (tab != selected) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onSelect(tab)
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -148,37 +177,36 @@ private fun LiquidNavItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val accent = when (tab) {
-        AppTab.HOME -> LocalFusionPalette.current.gold
-        AppTab.STATS -> LocalFusionPalette.current.cyan
-        AppTab.COSTS -> LocalFusionPalette.current.amber
-        AppTab.ACCOUNT -> LocalFusionPalette.current.green
-    }
-    val interaction = remember { MutableInteractionSource() }
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val accent = tab.accent(palette)
+    val interaction = remember { MutableInteractionSource() }
     val tint by androidx.compose.animation.animateColorAsState(
         targetValue = if (selected) accent else palette.navInactive,
-        animationSpec = tween(320),
+        animationSpec = tween(fusionDuration(320)),
         label = "nav-tint",
     )
     Column(
         modifier
             .fillMaxSize()
-            .clickable(
+            .selectable(
+                selected = selected,
                 interactionSource = interaction,
                 indication = null,
+                role = Role.Tab,
                 onClick = onClick,
-            ),
+            )
+            .fusionInteractive(design, RoundedCornerShape(design.radiusLg), interaction),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Canvas(Modifier.size(23.dp)) {
+        Canvas(Modifier.size(24.dp)) {
             drawNavGlyph(tab, tint)
         }
         Text(
             tab.label,
-            fontSize = 9.sp,
-            letterSpacing = 0.8.sp,
+            style = design.type.labelMicro,
+            letterSpacing = 0.4.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = tint,
         )
@@ -203,15 +231,15 @@ private fun DrawScope.drawLiquidLayer(
     val travelled = pos - floor(pos)
     val stretch = sin(travelled * PI).toFloat().coerceIn(0f, 1f)
 
-    val baseW = itemWidth * 0.86f
-    val baseH = size.height * 0.70f
-    val blobW = baseW * (1f + 0.30f * stretch)
-    val blobH = baseH * (1f - 0.16f * stretch)
+    val baseW = itemWidth * 0.88f
+    val baseH = size.height * 0.72f
+    val blobW = baseW * (1f + 0.28f * stretch)
+    val blobH = baseH * (1f - 0.14f * stretch)
     val halfW = blobW / 2f
     val halfH = blobH / 2f
 
-    val wobble = (sin(phase) * 0.10f + 0.04f) * halfH
-    val wobble2 = (cos(phase * 1.3f) * 0.09f) * halfH
+    val wobble = (sin(phase) * 0.08f + 0.03f) * halfH
+    val wobble2 = (cos(phase * 1.3f) * 0.07f) * halfH
 
     val accents = listOf(palette.gold, palette.cyan, palette.amber, palette.green)
     val accentIndex = floor(pos).toInt().coerceIn(0, count - 1)
@@ -380,7 +408,7 @@ private fun DrawScope.drawNavGlyph(tab: AppTab, color: Color) {
                     color = color.copy(alpha = 0.55f + 0.12f * i),
                     topLeft = Offset(w * x - bw / 2f, h * top),
                     size = Size(bw, h * (0.90f - top)),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(bw / 2f),
+                    cornerRadius = CornerRadius(bw / 2f),
                 )
             }
             drawLine(

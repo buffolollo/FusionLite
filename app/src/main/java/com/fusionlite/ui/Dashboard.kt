@@ -1,38 +1,26 @@
 package com.fusionlite.ui
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -45,13 +33,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.fusionlite.UiState
 import com.fusionlite.data.FlowAllocation
 import com.fusionlite.data.FlowMetrics
@@ -60,6 +50,13 @@ import com.fusionlite.data.allocation
 import com.fusionlite.data.clean
 import kotlinx.coroutines.delay
 
+/**
+ * Live home tab.
+ *
+ * Hierarchy: screen header → solar hero (current power + freshness) → four
+ * today KPIs → energy flow → battery → session controls. Every interactive
+ * element has a ≥48dp target, a visible focus ring and a screen-reader label.
+ */
 @Composable
 fun DashboardScreen(
     state: UiState,
@@ -79,71 +76,129 @@ fun DashboardScreen(
     val metrics = StationMetrics.from(station)
     val flow = state.flowMetrics
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     val secondsAgo = if (state.lastUpdated == 0L) null
     else ((now - state.lastUpdated) / 1000L).coerceAtLeast(0)
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { HeroCard(station?.name ?: "Solar plant", metrics, secondsAgo, state.loading, onRefresh) }
+    FusionPage(bottomPadding = design.navClearance) {
+        item {
+            FusionScreenHeader(
+                eyebrow = "Live home",
+                title = station?.name ?: "Solar plant",
+                accent = palette.gold,
+                trailing = {
+                    FusionIconButton(
+                        icon = FusionIcon.REFRESH,
+                        contentDescription = if (state.loading) "Refreshing live data" else "Refresh live data",
+                        onClick = onRefresh,
+                        enabled = !state.loading,
+                        tint = palette.gold,
+                        container = palette.glass,
+                        borderColor = palette.border,
+                        spinning = state.loading,
+                    )
+                },
+            )
+        }
+
+        item {
+            HeroCard(
+                stationName = station?.name ?: "Solar plant",
+                metrics = metrics,
+                secondsAgo = secondsAgo,
+                loading = state.loading,
+            )
+        }
 
         if (state.stations.size > 1) {
             item {
-                Row(
-                    Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.stations.forEach { s ->
-                        FilterChip(
-                            selected = s.dn == state.selectedDn,
-                            onClick = { s.dn?.let(onSelectStation) },
-                            label = {
-                                Text(
-                                    s.name ?: s.dn ?: "Plant",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = palette.gold.copy(alpha = 0.18f),
-                                selectedLabelColor = palette.gold,
-                            ),
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(design.spacingSm)) {
+                    Text(
+                        "SWITCH PLANT",
+                        style = design.type.labelMicro,
+                        color = palette.textSecondary,
+                    )
+                    Row(
+                        Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .selectableGroup(),
+                        horizontalArrangement = Arrangement.spacedBy(design.spacingSm),
+                    ) {
+                        state.stations.forEach { s ->
+                            val name = s.name ?: s.dn ?: "Plant"
+                            FusionChip(
+                                label = name,
+                                selected = s.dn == state.selectedDn,
+                                accent = palette.gold,
+                                onClick = { s.dn?.let(onSelectStation) },
+                            )
+                        }
                     }
                 }
             }
         }
 
         state.error?.let { error ->
-            item { ErrorBanner(error, onRetry = onRefresh) }
-        }
-
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                KpiTile(
-                    icon = "☀", label = "Produced", value = metrics.dailyEnergy, unit = "kWh",
-                    accent = palette.gold, modifier = Modifier.weight(1f),
-                )
-                KpiTile(
-                    // Same StatisticsSnapshot.periodConsumption as the
-                    // Analytics "Consumed" MiniStat.
-                    icon = "⚡", label = "Consumed", value = state.today?.periodConsumption,
-                    unit = "kWh", accent = palette.cyan, modifier = Modifier.weight(1f),
+            item {
+                FusionBanner(
+                    tone = FusionTone.DANGER,
+                    title = "Live data unavailable",
+                    message = error,
+                    actionLabel = "Retry",
+                    onAction = onRefresh,
                 )
             }
         }
+
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                KpiTile(
-                    icon = "🔋", label = "Battery", value = metrics.batterySoc ?: flow?.soc, unit = "%",
-                    accent = palette.green, modifier = Modifier.weight(1f),
-                )
-                KpiTile(
-                    icon = "🏗", label = "Capacity", value = metrics.capacity, unit = "kWp",
-                    accent = palette.blue, modifier = Modifier.weight(1f),
-                )
+            FusionSectionHeader(title = "Today", subtitle = "Energy recorded so far", accent = palette.gold)
+        }
+
+        item {
+            FusionGrid(itemCount = 4, minItemWidth = 150.dp) { index, tileModifier ->
+                when (index) {
+                    0 -> FusionStatTile(
+                        label = "Produced",
+                        value = metrics.dailyEnergy?.clean(1) ?: "—",
+                        unit = "kWh",
+                        icon = FusionIcon.SUN,
+                        tone = FusionTone.ACCENT,
+                        caption = station?.plantStatus?.let { "Plant status: $it" },
+                        loading = state.loading && metrics.dailyEnergy == null,
+                        modifier = tileModifier,
+                    )
+                    1 -> FusionStatTile(
+                        label = "Consumed",
+                        // Same StatisticsSnapshot.periodConsumption as Analytics.
+                        value = state.today?.periodConsumption?.clean(1) ?: "—",
+                        unit = "kWh",
+                        icon = FusionIcon.BOLT,
+                        tone = FusionTone.INFO,
+                        caption = if (state.todayLoading) "Updating…" else "Household load today",
+                        loading = state.todayLoading && state.today == null,
+                        modifier = tileModifier,
+                    )
+                    2 -> FusionStatTile(
+                        label = "Battery",
+                        value = (metrics.batterySoc ?: flow?.soc)?.clean(0) ?: "—",
+                        unit = "%",
+                        icon = FusionIcon.BATTERY,
+                        tone = FusionTone.SUCCESS,
+                        caption = "State of charge",
+                        loading = state.loading && (metrics.batterySoc ?: flow?.soc) == null,
+                        modifier = tileModifier,
+                    )
+                    else -> FusionStatTile(
+                        label = "Capacity",
+                        value = metrics.capacity?.clean(1) ?: "—",
+                        unit = "kWp",
+                        icon = FusionIcon.PANEL,
+                        tone = FusionTone.NEUTRAL,
+                        caption = "Installed DC capacity",
+                        loading = state.loading && metrics.capacity == null,
+                        modifier = tileModifier,
+                    )
+                }
             }
         }
 
@@ -155,10 +210,12 @@ fun DashboardScreen(
             )
         }
 
-        item { BatteryCard(soc = metrics.batterySoc ?: flow?.soc, batteryPower = flow?.battery) }
+        item {
+            BatteryCard(soc = metrics.batterySoc ?: flow?.soc, batteryPower = flow?.battery)
+        }
 
         item {
-            AutoRefreshRow(
+            SessionCard(
                 intervalSeconds = state.refreshIntervalSeconds,
                 onIntervalChange = onIntervalChange,
                 diag = state.diag,
@@ -174,16 +231,25 @@ private fun HeroCard(
     metrics: StationMetrics,
     secondsAgo: Long?,
     loading: Boolean,
-    onRefresh: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(28.dp)
+    val design = LocalFusionDesign.current
     val palette = LocalFusionPalette.current
+    val shape = RoundedCornerShape(design.radiusHero)
+    val stale = secondsAgo != null && secondsAgo >= 120
+    val freshness = when {
+        secondsAgo == null -> "Connecting"
+        loading -> "Syncing"
+        secondsAgo < 5 -> "Live"
+        stale -> "Stale · ${secondsAgo / 60}m ago"
+        else -> "Live · ${secondsAgo}s ago"
+    }
     Box(
         Modifier
             .fillMaxWidth()
-            .height(238.dp)
+            .heightIn(min = 248.dp)
             .clip(shape)
-            .border(1.dp, SolarCyan.copy(alpha = 0.20f), shape)
+            .background(palette.surfaceHigh, shape)
+            .border(1.dp, palette.border, shape)
     ) {
         SolarPanelScene(metrics.powerFraction, Modifier.matchParentSize())
         Box(
@@ -192,17 +258,27 @@ private fun HeroCard(
                 .background(
                     Brush.horizontalGradient(
                         listOf(
-                            palette.heroScrim.copy(alpha = 0.94f),
-                            palette.heroScrim.copy(alpha = 0.55f),
+                            palette.heroScrim.copy(alpha = 0.95f),
+                            palette.heroScrim.copy(alpha = 0.60f),
                             Color.Transparent,
                         )
                     )
                 )
         )
-        Column(
+        Box(
             Modifier
                 .matchParentSize()
-                .padding(20.dp),
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, palette.heroScrim.copy(alpha = 0.72f))
+                    )
+                )
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 248.dp)
+                .padding(design.spacingXl),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
@@ -210,150 +286,60 @@ private fun HeroCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "FUSIONSOLAR",
-                        fontSize = 10.sp,
-                        letterSpacing = 2.sp,
+                        "FUSIONLITE · LIVE",
+                        style = design.type.labelMicro,
                         color = SolarCyan,
-                        fontWeight = FontWeight.Bold,
                     )
                     Text(
                         stationName,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = design.type.heading,
                         color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics { heading() },
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    LivePill(secondsAgo)
-                    Spacer(Modifier.width(6.dp))
-                    IconButton(onClick = onRefresh, enabled = !loading) {
-                        RefreshGlyph(spinning = loading)
-                    }
-                }
+                FusionStatusPill(
+                    label = freshness,
+                    tone = if (stale) FusionTone.WARNING else FusionTone.SUCCESS,
+                    pulsing = !stale && !loading,
+                    // The hero is always a dark scrim, so use the bright artwork
+                    // accents rather than the darkened light-theme tokens.
+                    colorOverride = if (stale) SolarAmber else SolarGreen,
+                )
             }
             Column {
+                Text(
+                    "CURRENT POWER",
+                    style = design.type.labelMicro,
+                    color = SolarGold,
+                )
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
-                        metrics.currentPower?.clean() ?: "—",
-                        fontSize = 52.sp,
-                        fontWeight = FontWeight.Bold,
+                        metrics.currentPower?.clean(1) ?: "—",
+                        style = design.type.display,
                         color = Color.White,
-                        letterSpacing = (-1).sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     Text(
                         " kW",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Medium,
+                        style = design.type.heading,
                         color = SolarGold,
-                        modifier = Modifier.padding(bottom = 10.dp),
+                        modifier = Modifier.padding(bottom = 10.dp, start = 4.dp),
                     )
                 }
                 Text(
                     if (metrics.capacity != null) {
-                        "Live production · ${metrics.capacity.clean()} kWp installed"
+                        "${metrics.capacity.clean()} kWp installed · clears every 15–60 s"
                     } else {
-                        "Live production"
+                        "Waiting for the first live reading"
                     },
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.68f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LivePill(secondsAgo: Long?) {
-    val infinite = rememberInfiniteTransition(label = "live")
-    val alpha by infinite.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
-        label = "dot",
-    )
-    Row(
-        Modifier
-            .background(SolarGreen.copy(alpha = 0.13f), RoundedCornerShape(50))
-            .border(1.dp, SolarGreen.copy(alpha = 0.35f), RoundedCornerShape(50))
-            .padding(horizontal = 9.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Box(
-            Modifier
-                .size(7.dp)
-                .background(SolarGreen.copy(alpha = alpha), CircleShape)
-        )
-        Text(
-            text = secondsAgo?.let { if (it < 5) "LIVE" else "${it}s" } ?: "SYNC",
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            color = SolarGreen,
-        )
-    }
-}
-
-@Composable
-private fun RefreshGlyph(spinning: Boolean) {
-    val infinite = rememberInfiniteTransition(label = "spin")
-    val angle by infinite.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1000, easing = androidx.compose.animation.core.LinearEasing)),
-        label = "angle",
-    )
-    Text(
-        "⟳",
-        fontSize = 24.sp,
-        color = SolarGold,
-        modifier = if (spinning) Modifier.rotate(angle) else Modifier,
-    )
-}
-
-@Composable
-private fun KpiTile(
-    icon: String,
-    label: String,
-    value: Double?,
-    unit: String,
-    accent: Color,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(icon, fontSize = 15.sp)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    label.uppercase(),
-                    fontSize = 10.sp,
-                    letterSpacing = 1.4.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    value?.clean() ?: "—",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = accent,
-                )
-                Text(
-                    " $unit",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 3.dp),
+                    style = design.type.bodySmall,
+                    color = Color.White.copy(alpha = 0.82f),
                 )
             }
         }
@@ -363,59 +349,54 @@ private fun KpiTile(
 @Composable
 private fun EnergyFlowCard(metrics: FlowMetrics?, error: String?, loading: Boolean) {
     val allocation = remember(metrics) { metrics?.allocation() }
+    val design = LocalFusionDesign.current
     val palette = LocalFusionPalette.current
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("Energy flow", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        flowSubtitle(metrics, allocation),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (loading) {
-                    Text("refreshing…", fontSize = 10.sp, color = palette.cyan)
-                }
+    FusionCard {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Energy flow", style = design.type.heading, color = palette.textPrimary)
+                Text(
+                    flowSubtitle(metrics, allocation),
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
+                )
             }
-            Spacer(Modifier.height(10.dp))
-            if (metrics == null) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(190.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        error ?: "Waiting for live energy flow…",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
+            if (loading) {
+                FusionStatusPill(label = "Refreshing", tone = FusionTone.INFO, pulsing = true)
+            }
+        }
+        if (metrics == null) {
+            FusionEmptyState(
+                icon = FusionIcon.BOLT,
+                title = "Waiting for live flow",
+                message = error ?: "The plant has not reported an energy-flow graph yet.",
+            )
+        } else {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(300.dp)
+                    .semantics {
+                        contentDescription = flowDescription(metrics, allocation)
+                    },
+            ) {
                 EnergyFlowDiagram(
                     metrics = metrics,
                     allocation = allocation,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(292.dp),
+                    modifier = Modifier.fillMaxWidth().height(300.dp),
                 )
-                Spacer(Modifier.height(8.dp))
-                FlowAllocationBar(metrics = metrics, allocation = allocation)
-                error?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
-                }
+            }
+            FlowAllocationBar(metrics = metrics, allocation = allocation)
+            if (error != null) {
+                Text(
+                    error,
+                    style = design.type.bodySmall,
+                    color = palette.danger,
+                )
             }
         }
     }
@@ -437,152 +418,168 @@ private fun flowSubtitle(metrics: FlowMetrics?, allocation: FlowAllocation?): St
     }
 }
 
-@Composable
-private fun BatteryCard(soc: Double?, batteryPower: Double?) {
-    val palette = LocalFusionPalette.current
-    val target = ((soc ?: 0.0) / 100.0).coerceIn(0.0, 1.0).toFloat()
-    val animated by animateFloatAsState(target, tween(900), label = "soc")
-    val color = when {
-        soc == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        soc < 20 -> palette.danger
-        soc < 60 -> palette.gold
-        else -> palette.green
-    }
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("Battery storage", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        batteryPower?.let {
-                            when {
-                                it > 0.05 -> "Charging at ${it.clean()} kW"
-                                it < -0.05 -> "Discharging at ${(-it).clean()} kW"
-                                else -> "Idle"
-                            }
-                        } ?: "No battery reported",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    soc?.let { "${it.clean(0)}%" } ?: "—",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = color,
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(14.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(animated)
-                        .height(14.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(color.copy(alpha = 0.65f), color)
-                            )
-                        ),
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("0%", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("100%", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+/** Screen-reader narrative for the hand-drawn flow diagram. */
+private fun flowDescription(metrics: FlowMetrics, allocation: FlowAllocation?): String {
+    val parts = mutableListOf<String>()
+    metrics.pv?.let { parts += "Solar ${it.clean(1)} kilowatts" }
+    metrics.load?.let { parts += "Home ${it.clean(1)} kilowatts" }
+    metrics.grid?.let {
+        parts += if (allocation != null && allocation.gridImport > 0.05) {
+            "Grid import ${allocation.gridImport.clean(1)} kilowatts"
+        } else {
+            "Grid export ${(allocation?.gridExport ?: kotlin.math.abs(it)).clean(1)} kilowatts"
         }
     }
+    metrics.battery?.let {
+        parts += if (it >= 0) "Battery charging ${it.clean(1)} kilowatts"
+        else "Battery discharging ${(-it).clean(1)} kilowatts"
+    }
+    metrics.soc?.let { parts += "Battery at ${it.clean(0)} percent" }
+    return if (parts.isEmpty()) "Live energy flow" else "Energy flow. " + parts.joinToString(". ")
 }
 
 @Composable
-private fun AutoRefreshRow(
-    intervalSeconds: Int,
-    onIntervalChange: (Int) -> Unit,
-    diag: String?,
-    onLogout: () -> Unit,
-) {
+private fun BatteryCard(soc: Double?, batteryPower: Double?) {
+    val design = LocalFusionDesign.current
     val palette = LocalFusionPalette.current
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val target = ((soc ?: 0.0) / 100.0).coerceIn(0.0, 1.0).toFloat()
+    val animated by animateFloatAsState(
+        target,
+        tween(fusionDuration(900)),
+        label = "soc",
+    )
+    val color = when {
+        soc == null -> palette.textTertiary
+        soc < 20 -> palette.danger
+        soc < 60 -> palette.gold
+        else -> palette.success
+    }
+    FusionCard {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "AUTO REFRESH",
-                fontSize = 10.sp,
-                letterSpacing = 1.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(15, 30, 60).forEach { seconds ->
-                    val selected = intervalSeconds == seconds
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(
-                                if (selected) palette.cyan.copy(alpha = 0.18f)
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .border(
-                                1.dp,
-                                if (selected) palette.cyan.copy(alpha = 0.6f) else Color.Transparent,
-                                RoundedCornerShape(50),
-                            )
-                            .clickable { onIntervalChange(seconds) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        Text(
-                            "${seconds}s",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (selected) palette.cyan else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            Column(Modifier.weight(1f)) {
+                Text("Battery storage", style = design.type.heading, color = palette.textPrimary)
+                Text(
+                    batteryPower?.let {
+                        when {
+                            it > 0.05 -> "Charging at ${it.clean()} kW"
+                            it < -0.05 -> "Discharging at ${(-it).clean()} kW"
+                            else -> "Idle"
+                        }
+                    } ?: "No battery reported",
+                    style = design.type.bodySmall,
+                    color = palette.textSecondary,
+                )
             }
+            Text(
+                soc?.let { "${it.clean(0)}%" } ?: "—",
+                style = design.type.numeric,
+                color = color,
+                modifier = if (soc != null) {
+                    Modifier
+                        .progressSemantics((soc / 100.0).toFloat().coerceIn(0f, 1f))
+                        .semantics {
+                            contentDescription = "Battery state of charge ${soc.clean(0)} percent"
+                        }
+                } else {
+                    Modifier
+                },
+            )
         }
-        diag?.let {
-            Text(it, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+                .clip(CircleShape)
+                .background(palette.surfaceSunken),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(animated)
+                    .height(12.dp)
+                    .clip(CircleShape)
+                    .background(Brush.horizontalGradient(listOf(color.copy(alpha = 0.60f), color))),
+            )
         }
-        TextButton(onClick = onLogout, modifier = Modifier.align(Alignment.End)) {
-            Text("Sign out", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("0%", style = design.type.bodySmall, color = palette.textTertiary)
+            Text("100%", style = design.type.bodySmall, color = palette.textTertiary)
         }
     }
 }
 
 @Composable
-private fun ErrorBanner(message: String, onRetry: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(message, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-            TextButton(onClick = onRetry) {
-                Text("RETRY", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
+private fun SessionCard(
+    intervalSeconds: Int,
+    onIntervalChange: (Int) -> Unit,
+    diag: String?,
+    onLogout: () -> Unit,
+) {
+    val design = LocalFusionDesign.current
+    val palette = LocalFusionPalette.current
+    var confirmSignOut by remember { mutableStateOf(false) }
+    if (confirmSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            title = { Text("Sign out of FusionLite?", style = design.type.heading) },
+            text = {
+                Text(
+                    "The saved session and encrypted password will be removed from this device.",
+                    style = design.type.body,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmSignOut = false
+                        onLogout()
+                    },
+                ) {
+                    Text("Sign out", color = palette.danger, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSignOut = false }) {
+                    Text("Stay signed in", color = palette.cyan)
+                }
+            },
+            containerColor = palette.surfaceRaised,
+            titleContentColor = palette.textPrimary,
+            textContentColor = palette.textSecondary,
+        )
+    }
+    FusionCard {
+        Text("Session", style = design.type.heading, color = palette.textPrimary)
+        Text(
+            "How often live telemetry refreshes",
+            style = design.type.bodySmall,
+            color = palette.textSecondary,
+        )
+        FusionSegmentedControl(
+            options = listOf(15, 30, 60),
+            selected = intervalSeconds,
+            label = { "${it}s" },
+            onSelect = onIntervalChange,
+            accent = palette.cyan,
+        )
+        if (diag != null) {
+            Text(
+                diag,
+                style = design.type.bodySmall,
+                color = palette.textTertiary,
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FusionButton(
+                text = "Sign out",
+                onClick = { confirmSignOut = true },
+                variant = FusionButtonVariant.GHOST,
+                icon = FusionIcon.ARROW_UP_RIGHT,
+                accent = palette.danger,
+            )
         }
     }
 }

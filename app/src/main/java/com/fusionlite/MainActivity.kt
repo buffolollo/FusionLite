@@ -7,6 +7,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -63,6 +65,7 @@ import com.fusionlite.ui.DashboardScreen
 import com.fusionlite.ui.FullscreenChartScreen
 import com.fusionlite.ui.FusionTheme
 import com.fusionlite.ui.LiquidBottomBar
+import com.fusionlite.ui.LocalFusionReducedMotion
 import com.fusionlite.ui.LoginScreen
 import com.fusionlite.ui.StatisticsScreen
 import com.fusionlite.ui.isDark
@@ -95,17 +98,16 @@ private fun FusionLiteRoot() {
     val activity = generateSequence(LocalContext.current) { ctx ->
         (ctx as? android.content.ContextWrapper)?.baseContext
     }.firstOrNull { it is android.app.Activity } as? android.app.Activity
-    val windowBackground = MaterialTheme.colorScheme.background.toArgb()
     SideEffect {
         val window = activity?.window ?: return@SideEffect
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = !dark
             isAppearanceLightNavigationBars = !dark
         }
-        window.decorView.setBackgroundColor(windowBackground)
     }
 
     FusionTheme(themeMode) {
+        WindowChrome(dark)
         SurfaceRoot {
             FusionLiteApp(
                 themeMode = themeMode,
@@ -114,6 +116,28 @@ private fun FusionLiteRoot() {
                     themeMode = mode
                 },
             )
+        }
+    }
+}
+
+/**
+ * Paints the window behind the Compose surface with the *resolved* theme
+ * background. It must run inside [FusionTheme]: reading
+ * `MaterialTheme.colorScheme` before the theme is provided returned the
+ * default light scheme and produced a white flash behind dark content.
+ */
+@Composable
+private fun WindowChrome(dark: Boolean) {
+    val activity = generateSequence(LocalContext.current) { ctx ->
+        (ctx as? android.content.ContextWrapper)?.baseContext
+    }.firstOrNull { it is android.app.Activity } as? android.app.Activity
+    val background = MaterialTheme.colorScheme.background.toArgb()
+    SideEffect {
+        val window = activity?.window ?: return@SideEffect
+        window.decorView.setBackgroundColor(background)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
         }
     }
 }
@@ -204,6 +228,7 @@ private fun FusionLiteApp(
     }.firstOrNull { it is android.app.Activity } as? android.app.Activity
     // Full-screen landscape presentation of the production/power curve.
     var chartFullscreen by rememberSaveable { mutableStateOf(false) }
+    val reducedMotion = LocalFusionReducedMotion.current
 
     // Forcing landscape would normally recreate the activity; the manifest
     // declares orientation/screenSize as handled config changes so the whole
@@ -229,6 +254,10 @@ private fun FusionLiteApp(
         }
     }
     BackHandler(enabled = chartFullscreen) { chartFullscreen = false }
+    // Back from a secondary tab returns Home before leaving the app.
+    BackHandler(enabled = !chartFullscreen && state.loggedIn && state.tab != AppTab.HOME) {
+        state = state.copy(tab = AppTab.HOME)
+    }
 
     // Serialises renewals: the dashboard loop and the analytics tab can both hit
     // an expired session at the same time and must not race each other.
@@ -700,10 +729,14 @@ private fun FusionLiteApp(
             else -> "login"
         },
         transitionSpec = {
-            (
-                fadeIn(tween(360)) +
-                    slideInHorizontally(tween(440)) { width -> width / 16 }
-                ) togetherWith fadeOut(tween(220))
+            if (reducedMotion) {
+                EnterTransition.None togetherWith ExitTransition.None
+            } else {
+                (
+                    fadeIn(tween(360)) +
+                        slideInHorizontally(tween(440)) { width -> width / 16 }
+                    ) togetherWith fadeOut(tween(220))
+            }
         },
         label = "screen",
         modifier = Modifier.fillMaxSize(),
@@ -759,18 +792,22 @@ private fun FusionLiteApp(
                     AnimatedContent(
                         targetState = state.tab,
                         transitionSpec = {
-                            val forward = targetState.ordinal > initialState.ordinal
-                            (
-                                fadeIn(tween(340)) +
-                                    slideInHorizontally(tween(430)) { width ->
-                                        if (forward) width / 7 else -width / 7
-                                    }
-                                ) togetherWith (
-                                fadeOut(tween(220)) +
-                                    slideOutHorizontally(tween(430)) { width ->
-                                        if (forward) -width / 7 else width / 7
-                                    }
-                                )
+                            if (reducedMotion) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                val forward = targetState.ordinal > initialState.ordinal
+                                (
+                                    fadeIn(tween(340)) +
+                                        slideInHorizontally(tween(430)) { width ->
+                                            if (forward) width / 7 else -width / 7
+                                        }
+                                    ) togetherWith (
+                                    fadeOut(tween(220)) +
+                                        slideOutHorizontally(tween(430)) { width ->
+                                            if (forward) -width / 7 else width / 7
+                                        }
+                                    )
+                            }
                         },
                         label = "tab",
                         modifier = Modifier.fillMaxSize(),
