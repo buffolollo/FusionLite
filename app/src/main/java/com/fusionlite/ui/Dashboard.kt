@@ -444,7 +444,7 @@ private fun BatteryCard(soc: Double?, batteryPower: Double?) {
     val animated by animateFloatAsState(target, tween(900), label = "soc")
     val color = when {
         soc == null -> MaterialTheme.colorScheme.onSurfaceVariant
-        soc < 20 -> Color(0xFFFF7A7A)
+        soc < 20 -> palette.danger
         soc < 60 -> palette.gold
         else -> palette.green
     }

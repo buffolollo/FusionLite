@@ -167,13 +167,14 @@ fun LoginScreen(
                         }
                     }
 
+                    val scheme = MaterialTheme.colorScheme
                     Button(
                         onClick = onLogin,
                         enabled = !loading && user.isNotBlank() && pass.isNotBlank(),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SolarGold,
-                            contentColor = Color(0xFF241800),
+                            containerColor = scheme.primary,
+                            contentColor = scheme.onPrimary,
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -183,7 +184,7 @@ fun LoginScreen(
                             CircularProgressIndicator(
                                 modifier = Modifier.height(20.dp),
                                 strokeWidth = 2.dp,
-                                color = Color(0xFF241800),
+                                color = scheme.onPrimary,
                             )
                             Spacer(Modifier.height(0.dp))
                         } else {

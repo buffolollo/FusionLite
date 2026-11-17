@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -15,7 +16,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.fusionlite.data.ThemeMode
+
+// ---------------------------------------------------------------------------
+// Raw brand constants — artwork only. For anything on a themed surface use
+// FusionPalette (LocalFusionPalette.current), whose light variants are
+// darkened for contrast.
+// ---------------------------------------------------------------------------
 
 val SolarGold = Color(0xFFFFC94D)
 val SolarAmber = Color(0xFFFF9F1C)
@@ -31,19 +41,27 @@ val NightOutline = Color(0xFF26385A)
 // Extended palette
 //
 // MaterialTheme only exposes a handful of slots, while this UI also needs
-// glass fills, chart grid lines, the nav-bar gradient and the hero scrim.
-// Keeping those in one immutable palette means every surface, chart and
-// ornament animates together when the theme changes.
+// glass fills, chart grid lines, the nav-bar gradient, the hero scrim,
+// battery roles and interaction-state colours. Keeping those in one immutable
+// palette means every surface, chart and ornament animates together when the
+// theme changes. All text/accent pairs below were chosen to clear WCAG AA
+// (4.5:1 body text, 3:1 large text and non-text UI) on their own containers.
 // ---------------------------------------------------------------------------
 
 @Immutable
 data class FusionPalette(
     val dark: Boolean,
+    // Accents (light variants are darkened ≥4.5:1 on white cards).
     val gold: Color,
     val amber: Color,
     val cyan: Color,
     val green: Color,
     val blue: Color,
+    // Status roles.
+    val danger: Color,
+    val batteryCharge: Color,
+    val batteryDischarge: Color,
+    // Surfaces & ornaments.
     val surfaceHigh: Color,
     val glass: Color,
     val glassStrong: Color,
@@ -66,17 +84,20 @@ private val DarkPalette = FusionPalette(
     amber = SolarAmber,
     cyan = SolarCyan,
     green = SolarGreen,
-    blue = SolarBlue,
+    blue = Color(0xFF7FB3FF),
+    danger = Color(0xFFFF7A7A),
+    batteryCharge = Color(0xFFC9A6FF),
+    batteryDischarge = Color(0xFFFFA588),
     surfaceHigh = NightSurfaceHigh,
     glass = Color.White.copy(alpha = 0.05f),
     glassStrong = Color.White.copy(alpha = 0.09f),
     chartGrid = Color.White.copy(alpha = 0.07f),
-    chartLabel = Color.White.copy(alpha = 0.55f),
+    chartLabel = Color.White.copy(alpha = 0.58f),
     chartTagText = Color.White,
     heroScrim = NightSky,
     navTop = NightSurfaceHigh,
     navBottom = NightSurface,
-    navInactive = Color.White.copy(alpha = 0.42f),
+    navInactive = Color.White.copy(alpha = 0.48f),
     blobSpecular = Color.White.copy(alpha = 0.22f),
     loginGradient = listOf(Color(0xFF081226), Color(0xFF0D1D36), Color(0xFF07101F)),
     loginTitle = Color.White,
@@ -85,12 +106,15 @@ private val DarkPalette = FusionPalette(
 
 private val LightPalette = FusionPalette(
     dark = false,
-    // Deeper accents so labels and values stay readable on white cards.
-    gold = Color(0xFFB77A00),
-    amber = Color(0xFFC46A00),
+    // Deeper accents so labels and values stay readable on white cards (≥4.5:1).
+    gold = Color(0xFF8F6100),
+    amber = Color(0xFFA85800),
     cyan = Color(0xFF00738C),
     green = Color(0xFF157A4C),
     blue = Color(0xFF2563C9),
+    danger = Color(0xFFB3261E),
+    batteryCharge = Color(0xFF6D3FC4),
+    batteryDischarge = Color(0xFFC2411F),
     surfaceHigh = Color(0xFFEDF2FA),
     glass = Color(0xFF0B1B33).copy(alpha = 0.045f),
     glassStrong = Color(0xFF0B1B33).copy(alpha = 0.08f),
@@ -116,6 +140,9 @@ private fun lerpPalette(from: FusionPalette, to: FusionPalette, t: Float): Fusio
         cyan = c(from.cyan, to.cyan),
         green = c(from.green, to.green),
         blue = c(from.blue, to.blue),
+        danger = c(from.danger, to.danger),
+        batteryCharge = c(from.batteryCharge, to.batteryCharge),
+        batteryDischarge = c(from.batteryDischarge, to.batteryDischarge),
         surfaceHigh = c(from.surfaceHigh, to.surfaceHigh),
         glass = c(from.glass, to.glass),
         glassStrong = c(from.glassStrong, to.glassStrong),
@@ -134,6 +161,71 @@ private fun lerpPalette(from: FusionPalette, to: FusionPalette, t: Float): Fusio
 }
 
 val LocalFusionPalette = staticCompositionLocalOf { DarkPalette }
+
+// ---------------------------------------------------------------------------
+// Interaction-state tokens (theme dependent)
+// ---------------------------------------------------------------------------
+
+@Immutable
+data class FusionStates(
+    val pressedOverlay: Color,
+    val focus: Color,
+    val disabledContent: Color,
+    val disabledContainer: Color,
+    val hairline: Color,
+)
+
+private val DarkStates = FusionStates(
+    pressedOverlay = Color.White.copy(alpha = 0.10f),
+    focus = SolarCyan,
+    disabledContent = Color.White.copy(alpha = 0.38f),
+    disabledContainer = Color.White.copy(alpha = 0.12f),
+    hairline = Color.White.copy(alpha = 0.08f),
+)
+
+private val LightStates = FusionStates(
+    pressedOverlay = Color(0xFF0B1B33).copy(alpha = 0.08f),
+    focus = Color(0xFF2563C9),
+    disabledContent = Color(0xFF455267).copy(alpha = 0.38f),
+    disabledContainer = Color(0xFF0B1B33).copy(alpha = 0.08f),
+    hairline = Color(0xFF15243B).copy(alpha = 0.10f),
+)
+
+/**
+ * Geometry + motion tokens (theme independent) bundled with the theme's
+ * interaction-state colours. Provided through [LocalFusionDesign].
+ */
+@Immutable
+class FusionDesignSystem(val states: FusionStates)
+
+val LocalFusionDesign = staticCompositionLocalOf { FusionDesignSystem(DarkStates) }
+
+// ---------------------------------------------------------------------------
+// Typography scale — one vocabulary for every screen. Sizes are exact values
+// the screens already use, promoted to tokens.
+// ---------------------------------------------------------------------------
+
+@Immutable
+data class FusionType(
+    val display: TextStyle = TextStyle(fontSize = 46.sp, lineHeight = 52.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.5).sp),
+    val title: TextStyle = TextStyle(fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    val heading: TextStyle = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+    val body: TextStyle = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal),
+    val bodySmall: TextStyle = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Normal),
+    /** All-caps micro label (section eyebrows, chips). */
+    val labelMicro: TextStyle = TextStyle(fontSize = 9.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold),
+)
+
+val FusionDesignSystem.type: FusionType get() = FusionType()
+
+private fun materialTypography(): Typography = Typography(
+    displayLarge = FusionType().display,
+    titleLarge = FusionType().title,
+    titleMedium = FusionType().heading,
+    bodyMedium = FusionType().body,
+    bodySmall = FusionType().bodySmall,
+    labelSmall = FusionType().labelMicro,
+)
 
 // ---------------------------------------------------------------------------
 // Colour schemes
@@ -168,7 +260,7 @@ private val DarkScheme = darkColorScheme(
 )
 
 private val LightScheme = lightColorScheme(
-    primary = Color(0xFFB26A00),
+    primary = Color(0xFFA35F00),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFFFDFA8),
     onPrimaryContainer = Color(0xFF3A2600),
@@ -263,9 +355,20 @@ fun FusionTheme(
     )
     val palette = lerpPalette(LightPalette, DarkPalette, progress)
     val scheme = blendSchemes(LightScheme, DarkScheme, progress)
-    CompositionLocalProvider(LocalFusionPalette provides palette) {
+    val states = FusionStates(
+        pressedOverlay = lerp(LightStates.pressedOverlay, DarkStates.pressedOverlay, progress),
+        focus = lerp(LightStates.focus, DarkStates.focus, progress),
+        disabledContent = lerp(LightStates.disabledContent, DarkStates.disabledContent, progress),
+        disabledContainer = lerp(LightStates.disabledContainer, DarkStates.disabledContainer, progress),
+        hairline = lerp(LightStates.hairline, DarkStates.hairline, progress),
+    )
+    CompositionLocalProvider(
+        LocalFusionPalette provides palette,
+        LocalFusionDesign provides FusionDesignSystem(states),
+    ) {
         MaterialTheme(
             colorScheme = scheme,
+            typography = materialTypography(),
             content = content,
         )
     }

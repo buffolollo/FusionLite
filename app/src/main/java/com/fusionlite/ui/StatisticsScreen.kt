@@ -22,10 +22,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,11 +99,17 @@ fun StatisticsScreen(
     val gridExport = remember(snapshot) { snapshot?.gridExport().orEmpty() }
     val gridImport = remember(snapshot) { snapshot?.gridImport().orEmpty() }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
+    val design = LocalFusionDesign.current
+    // On tablets / landscape the column stays a readable measure instead of
+    // stretching edge to edge (adaptive gutter rule).
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxSize()
+                .widthIn(max = design.maxContentWidth),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 118.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
         item {
             StatisticsHeader(
                 stationName = station?.name ?: "Solar plant",
@@ -187,6 +196,7 @@ fun StatisticsScreen(
                 onRefresh = onRefresh,
             )
         }
+        }
     }
 }
 
@@ -215,13 +225,25 @@ private fun StatisticsHeader(stationName: String, loading: Boolean, onRefresh: (
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        val interaction = remember { MutableInteractionSource() }
         Box(
             Modifier
+                .heightIn(min = 40.dp)
                 .clip(CircleShape)
                 .background(palette.glass)
                 .border(1.dp, palette.cyan.copy(alpha = 0.25f), CircleShape)
-                .clickable(enabled = !loading, onClick = onRefresh)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .fusionInteractive(
+                    design = LocalFusionDesign.current,
+                    shape = CircleShape,
+                    interactionSource = interaction,
+                )
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = !loading,
+                    onClick = onRefresh,
+                )
+                .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Text(
                 if (loading) "SYNCING" else "REFRESH",
@@ -257,7 +279,7 @@ internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPer
             Modifier
                 .offset(x = indicatorOffset)
                 .width(itemWidth)
-                .height(36.dp)
+                .height(44.dp)
                 .clip(shape)
                 .background(
                     Brush.horizontalGradient(
@@ -273,12 +295,21 @@ internal fun PeriodSelector(selected: StatisticsPeriod, onSelect: (StatisticsPer
         Row(Modifier.fillMaxWidth()) {
             periods.forEach { period ->
                 val active = period == selected
+                val interaction = remember { MutableInteractionSource() }
                 Box(
                     Modifier
                         .weight(1f)
-                        .height(36.dp)
+                        .heightIn(min = 44.dp)
                         .clip(shape)
-                        .clickable { onSelect(period) },
+                        .fusionInteractive(
+                            design = LocalFusionDesign.current,
+                            shape = shape,
+                            interactionSource = interaction,
+                        )
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                        ) { onSelect(period) },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -359,13 +390,17 @@ internal fun PeriodNavigator(
 @Composable
 private fun JumpToNowChip(label: String, color: Color, onClick: () -> Unit) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val interaction = remember { MutableInteractionSource() }
     Box(
         Modifier
+            .heightIn(min = 40.dp)
             .clip(CircleShape)
             .background(palette.glass)
             .border(1.dp, color.copy(alpha = 0.45f), CircleShape)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .fusionInteractive(design = design, shape = CircleShape, interactionSource = interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -382,25 +417,32 @@ private fun JumpToNowChip(label: String, color: Color, onClick: () -> Unit) {
 @Composable
 private fun NavArrow(glyph: String, enabled: Boolean = true, onClick: () -> Unit) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val interaction = remember { MutableInteractionSource() }
     Box(
         Modifier
-            .size(34.dp)
+            .size(44.dp)
             .clip(CircleShape)
-            .background(if (enabled) palette.glassStrong else palette.glass)
+            .background(if (enabled) palette.glassStrong else design.states.disabledContainer)
             .border(
                 1.dp,
                 if (enabled) SolarCyan.copy(alpha = 0.30f) else Color.Transparent,
                 CircleShape,
             )
-            .clickable(enabled = enabled, onClick = onClick),
+            .fusionInteractive(design = design, shape = CircleShape, interactionSource = interaction)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = enabled,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             glyph,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else design.states.disabledContent,
         )
     }
 }
@@ -654,6 +696,7 @@ private fun ChartCard(
 @Composable
 private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
     Row(
         Modifier
             .clip(RoundedCornerShape(50))
@@ -663,6 +706,7 @@ private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
     ) {
         ChartMode.entries.forEach { item ->
             val active = item == mode
+            val interaction = remember { MutableInteractionSource() }
             val background by animateColorAsState(
                 if (active) palette.cyan.copy(alpha = 0.20f) else Color.Transparent,
                 label = "mode-bg",
@@ -675,8 +719,9 @@ private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
                 Modifier
                     .clip(RoundedCornerShape(50))
                     .background(background)
-                    .clickable { onChange(item) }
-                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                    .fusionInteractive(design = design, shape = RoundedCornerShape(50), interactionSource = interaction)
+                    .clickable(interactionSource = interaction, indication = null) { onChange(item) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Text(item.label, fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = textColor)
             }
@@ -688,13 +733,16 @@ private fun ModeToggle(mode: ChartMode, onChange: (ChartMode) -> Unit) {
 @Composable
 private fun ExpandButton(onClick: () -> Unit) {
     val palette = LocalFusionPalette.current
+    val design = LocalFusionDesign.current
+    val interaction = remember { MutableInteractionSource() }
     Box(
         Modifier
-            .size(30.dp)
+            .size(40.dp)
             .clip(CircleShape)
             .background(palette.glass)
             .border(1.dp, palette.cyan.copy(alpha = 0.25f), CircleShape)
-            .clickable(onClick = onClick),
+            .fusionInteractive(design = design, shape = CircleShape, interactionSource = interaction)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(14.dp)) {
@@ -810,8 +858,8 @@ private fun BreakdownCard(
         Triple("Consumption", snapshot?.periodConsumption ?: 0.0, palette.cyan),
         Triple("Exported to grid", snapshot?.periodExport ?: 0.0, palette.green),
         Triple("Imported from grid", snapshot?.periodImport ?: 0.0, palette.blue),
-        Triple("Battery charged", snapshot?.charge ?: 0.0, Color(0xFFB388FF)),
-        Triple("Battery discharged", snapshot?.discharge ?: 0.0, Color(0xFFFF8A65)),
+        Triple("Battery charged", snapshot?.charge ?: 0.0, palette.batteryCharge),
+        Triple("Battery discharged", snapshot?.discharge ?: 0.0, palette.batteryDischarge),
     )
     val maxValue = rows.maxOfOrNull { it.second } ?: 0.0
     Card(
@@ -901,7 +949,7 @@ private fun HighlightsCard(snapshot: StatisticsSnapshot?, period: StatisticsPeri
                     label = "BATTERY FLOW",
                     value = snapshot?.batteryCycles?.clean(1) ?: "—",
                     caption = "kWh cycled",
-                    accent = Color(0xFFB388FF),
+                    accent = palette.batteryCharge,
                     modifier = Modifier.weight(1f),
                 )
                 HighlightTile(
